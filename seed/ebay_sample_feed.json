@@ -1,0 +1,29 @@
+[
+  {
+    "source_listing_id": "EBAY-FEED-001",
+    "sold_at_raw": "2026-03-29",
+    "listing_title_raw": "2023 Topps Chrome Shohei Ohtani #1 PSA 10 sold",
+    "listing_url_raw": "https://example.com/feed1",
+    "condition_raw": "PSA 10",
+    "price_raw": "$190.00",
+    "shipping_raw": "$5.00"
+  },
+  {
+    "source_listing_id": "EBAY-FEED-002",
+    "sold_at_raw": "2026-03-28",
+    "listing_title_raw": "2023 Panini Prizm Victor Wembanyama #136 Silver PSA 10",
+    "listing_url_raw": "https://example.com/feed2",
+    "condition_raw": "PSA 10",
+    "price_raw": "$440.00",
+    "shipping_raw": "$10.00"
+  },
+  {
+    "source_listing_id": "EBAY-FEED-003",
+    "sold_at_raw": "2026-03-27",
+    "listing_title_raw": "Baseball card lot unknown",
+    "listing_url_raw": "https://example.com/feed3",
+    "condition_raw": "Raw",
+    "price_raw": "$25.00",
+    "shipping_raw": "$4.00"
+  }
+]
