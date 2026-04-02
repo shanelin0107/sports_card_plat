@@ -1,0 +1,21 @@
+TRUNCATE TABLE
+  ingestion_issue,
+  ingestion_run,
+  valuation_snapshot,
+  saved_search,
+  collection_item,
+  sale_comp,
+  listing_card_match,
+  normalized_sale,
+  raw_market_listing,
+  card_grade_profile,
+  card_parallel,
+  card,
+  owner_profile,
+  source_platform,
+  grade_company,
+  player,
+  card_set,
+  brand,
+  sport
+RESTART IDENTITY CASCADE;
