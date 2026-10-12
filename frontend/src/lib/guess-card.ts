@@ -2,6 +2,7 @@
 // into new-card form defaults. Everything stays editable; this only saves typing.
 
 export type CardGuess = {
+  print_run?: string;
   year?: string;
   brand?: string;
   set_name?: string;
@@ -15,6 +16,10 @@ export type CardGuess = {
 const SETS: [string, string, string][] = [
   // [phrase, brand, set]
   ['national treasures', 'Panini', 'National Treasures'],
+  ['prizm black', 'Panini', 'Prizm Black'],
+  ['prizm draft picks', 'Panini', 'Prizm Draft Picks'],
+  ['select black', 'Panini', 'Select Black'],
+  ['topps chrome black', 'Topps', 'Chrome Black'],
   ['donruss optic', 'Panini', 'Donruss Optic'],
   ['stadium club', 'Topps', 'Stadium Club'],
   ['bowman chrome', 'Bowman', 'Bowman Chrome'],
@@ -58,6 +63,13 @@ export function guessCard(query: string): CardGuess {
   }
   if (season) g.sport = 'Basketball'; // "2024-25" style seasons are NBA/NHL; editable
 
+  // Serial numbering ("/60", "12/60", "#/60") is a print run, not part of the name or card number.
+  const serial = q.match(/(?:#?\s*\d{0,4})\s*\/\s*(\d{1,4})\b/);
+  if (serial) {
+    g.print_run = serial[1];
+    q = q.replace(serial[0], ' ');
+  }
+
   const num = q.match(/#\s*([A-Za-z0-9-]+)/);
   if (num) {
     g.card_number = num[1];
@@ -83,7 +95,9 @@ export function guessCard(query: string): CardGuess {
   const words = q.split(/\s+/).filter(Boolean);
   const parallel = words.filter((w) => PARALLEL_WORDS.includes(w.toLowerCase()));
   if (parallel.length) g.parallel = title(parallel.join(' ').toLowerCase());
-  const player = words.filter((w) => !PARALLEL_WORDS.includes(w.toLowerCase()) && !NOISE.has(w.toLowerCase()) && !/^\d+$/.test(w));
+  const player = words.filter(
+    (w) => !PARALLEL_WORDS.includes(w.toLowerCase()) && !NOISE.has(w.toLowerCase()) && !/\d/.test(w) && !/^[^a-z]+$/i.test(w),
+  );
   if (player.length) g.player = title(player.join(' ').toLowerCase());
   return g;
 }

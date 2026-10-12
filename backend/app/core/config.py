@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     # eBay developer keyset (Production App ID + Cert ID). Empty = eBay features off.
     ebay_client_id: str = ""
     ebay_client_secret: str = ""
+    ebay_api_base: str = "https://api.ebay.com"  # https://api.sandbox.ebay.com for sandbox keys
 
     ingestion_feed_path: str = str(PROJECT_ROOT / "seed" / "ebay_sample_feed.json")
 

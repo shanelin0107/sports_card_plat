@@ -110,3 +110,13 @@ def test_holding_photo_roundtrip(client):
     # deleting the holding also removes its photo (FK cascade)
     client.put(f"/api/v1/collection/items/{item_id}/photo", json={"content_type": "image/png", "data_base64": base64.b64encode(png).decode()})
     assert client.delete(f"/api/v1/collection/items/{item_id}").status_code == 200
+
+
+def test_catalog_cleans_player_and_edit(client):
+    c = client.post("/api/v1/catalog/cards", json={"sport": "Basketball", "year": 2024, "brand": "Panini", "set_name": "Prizm Black",
+                                                   "player": "Damian Lillard /60", "card_number": "91", "parallel": "Orange", "print_run": 60}).json()
+    d = client.get(f"/api/v1/cards/{c['card_id']}").json()["metadata"]
+    assert d["player"] == "Damian Lillard"
+    e = client.patch(f"/api/v1/catalog/cards/{c['card_id']}", json={"parallel": "Orange Wave", "player": "Damian Lillard"}).json()
+    assert e["parallel"] == "Orange Wave" and e["print_run"] == 60 and e["title"] == "2024 Panini Prizm Black Damian Lillard #91"
+    assert client.get("/api/v1/cards/search", params={"q": "lillard orange wave"}).json()[0]["id"] == c["card_id"]

@@ -280,3 +280,10 @@ CREATE TABLE IF NOT EXISTS ai_price_research (
   completed_at TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS idx_ai_price_research_card ON ai_price_research(card_id, created_at DESC);
+
+-- v0.5: serial numbers pasted into player names ("Damian Lillard /60") -> strip them.
+UPDATE player SET full_name = btrim(regexp_replace(full_name, '\s*\S*/\d+\S*', '', 'g'))
+  WHERE full_name ~ '/\d';
+UPDATE card SET title = regexp_replace(title, '\s+#?\d*/\d+\b', '', 'g'),
+                search_text_normalized = regexp_replace(search_text_normalized, '\s+#?\d*/\d+\b', '', 'g')
+  WHERE title ~ '\s#?\d*/\d+\b';

@@ -11,6 +11,7 @@ import type { CardSearchResult, Holding } from '@/lib/types';
 
 import { CardPicker } from './CardPicker';
 import { CardThumb } from './CardThumb';
+import { EbayPhotoPicker } from './EbayPhotoPicker';
 import { NewCardForm } from './NewCardForm';
 
 const GRADES = ['raw', '10', '9', '8', '7', '6', '5', '4', '3', '2', '1'];
@@ -226,6 +227,7 @@ function HoldingForm({
   const guess = newCardQuery ? guessCard(newCardQuery) : {};
   const [photo, setPhoto] = useState<{ content_type: string; data_base64: string; preview: string } | null>(null);
   const [removePhoto, setRemovePhoto] = useState(false);
+  const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const set = (k: keyof Draft, v: string | number | null) => setD((x) => ({ ...x, [k]: v }));
@@ -367,11 +369,23 @@ function HoldingForm({
         </div>
         <fieldset className="flex flex-wrap items-center gap-4 rounded-md border border-line p-3">
           <legend className="eyebrow px-1">Card photo</legend>
-          <CardThumb src={shownPhoto} player={d.player} size="md" alt="Selected card photo" />
+          <button
+            type="button"
+            onClick={() => setPicking(true)}
+            disabled={!d.card_id}
+            className="rounded-[4px] hover:ring-2 hover:ring-up disabled:hover:ring-0"
+            aria-label="Pick a photo from eBay listings"
+            title={d.card_id ? 'Pick a photo from eBay listings' : 'Choose the card first'}
+          >
+            <CardThumb src={shownPhoto} player={d.player} size="md" alt="Selected card photo" />
+          </button>
           <div className="flex min-w-[220px] flex-1 flex-col gap-2">
             <div className="flex flex-wrap gap-2">
+              <button type="button" className="btn-primary" disabled={!d.card_id} onClick={() => setPicking(true)}>
+                Pick from eBay
+              </button>
               <label className="btn-ghost cursor-pointer">
-                {shownPhoto ? 'Replace photo' : 'Upload photo'}
+                {shownPhoto ? 'Upload my own instead' : 'Upload my own'}
                 <input type="file" accept="image/*" className="sr-only" onChange={(e) => choosePhoto(e.target.files?.[0])} />
               </label>
               {(photo || (itemId && d.current_photo && !removePhoto && !d.image_url)) && (
@@ -397,8 +411,25 @@ function HoldingForm({
               value={d.image_url}
               onChange={(e) => set('image_url', e.target.value)}
             />
-            <p className="text-[12px] text-muted">On a phone, Upload opens the camera. Photos are resized before upload.</p>
+            <p className="text-[12px] text-muted">Click the photo or “Pick from eBay” to choose a listing photo. On a phone, Upload opens the camera.</p>
           </div>
+          {picking && d.card_id && (
+            <div className="w-full">
+              <EbayPhotoPicker
+                cardId={d.card_id}
+                grade={d.grade === 'raw' ? 'raw' : `psa${d.grade}`}
+                onClose={() => setPicking(false)}
+                onPick={(url) => {
+                  set('image_url', url);
+                  setPhoto(null);
+                  if (d.current_photo && !d.image_url) setRemovePhoto(true); // replace an uploaded photo
+                  setPicking(false);
+                  // Also use it as the catalog image if the card has none yet (best effort).
+                  api(`/catalog/cards/${d.card_id}/image?only_if_empty=true`, { method: 'PUT', body: JSON.stringify({ image_url: url }) }).catch(() => {});
+                }}
+              />
+            </div>
+          )}
         </fieldset>
         <div className="space-y-1">
           <label htmlFor="hf-notes" className="eyebrow">

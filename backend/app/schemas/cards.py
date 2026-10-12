@@ -29,6 +29,8 @@ class CardMetadataOut(BaseModel):
     card_set: str
     player: str
     sport: str | None = None
+    parallel: str | None = None
+    print_run: int | None = None
     rookie_flag: bool
     autograph_flag: bool
     patch_flag: bool

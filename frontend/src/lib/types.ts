@@ -161,6 +161,8 @@ export type CardDetail = {
     card_set: string;
     player: string;
     sport: string | null;
+    parallel: string | null;
+    print_run: number | null;
     rookie_flag: boolean;
     autograph_flag: boolean;
     patch_flag: boolean;

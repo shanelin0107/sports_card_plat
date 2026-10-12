@@ -21,6 +21,7 @@ class CardCreate(BaseModel):
     player: str = Field(min_length=1, max_length=150)
     card_number: str = Field(min_length=1, max_length=50)
     parallel: str = Field(default="Base", max_length=100)
+    print_run: int | None = Field(default=None, ge=1, le=100000)
     rookie: bool = False
     autograph: bool = False
     patch: bool = False
@@ -39,6 +40,12 @@ def _get_or_create(db: Session, model, lookup: dict, extra: dict | None = None):
     db.add(obj)
     db.flush()
     return obj
+
+
+def clean_player(name: str) -> str:
+    """Drop serial numbers / card numbers that sneak into a pasted name ("Damian Lillard /60")."""
+    words = [w for w in name.split() if not re.search(r"[\d/#]", w)]
+    return " ".join(words).strip() or name.strip()
 
 
 def _slug(*parts) -> str:
@@ -68,7 +75,7 @@ def create_card(body: CardCreate, db: Session = Depends(get_db)):
     card_set = _get_or_create(
         db, CardSet, {"name": set_name, "release_year": body.year, "brand_id": brand.id}, {"sport_id": sport.id}
     )
-    player = _get_or_create(db, Player, {"full_name": body.player.strip()}, {"sport_id": sport.id})
+    player = _get_or_create(db, Player, {"full_name": clean_player(body.player)}, {"sport_id": sport.id})
     number = body.card_number.strip().lstrip("#")
     parallel_name = body.parallel.strip() or "Base"
 
@@ -101,7 +108,7 @@ def create_card(body: CardCreate, db: Session = Depends(get_db)):
         select(CardParallel).where(CardParallel.card_id == card.id, func.lower(CardParallel.parallel_name) == parallel_name.lower())
     ).first()
     if parallel is None:
-        parallel = CardParallel(card_id=card.id, parallel_name=parallel_name, variation_name="Base")
+        parallel = CardParallel(card_id=card.id, parallel_name=parallel_name, variation_name="Base", print_run=body.print_run)
         db.add(parallel)
         db.flush()
         if parallel_name.lower() != "base" and parallel_name.lower() not in card.search_text_normalized:
@@ -116,13 +123,77 @@ class CardImageIn(BaseModel):
 
 
 @router.put("/cards/{card_id}/image")
-def set_card_image(card_id: int, body: CardImageIn, db: Session = Depends(get_db)):
+def set_card_image(card_id: int, body: CardImageIn, only_if_empty: bool = False, db: Session = Depends(get_db)):
     """Set (or clear) the catalog image, e.g. from an eBay listing photo."""
     card = db.get(Card, card_id)
     if card is None:
         raise HTTPException(status_code=404, detail="Card not found")
+    if only_if_empty and card.default_image_url:
+        return {"card_id": card_id, "default_image_url": card.default_image_url}
     if body.image_url and not body.image_url.startswith("https://"):
         raise HTTPException(status_code=422, detail="Image URL must be https")
     card.default_image_url = body.image_url or None
     db.commit()
     return {"card_id": card_id, "default_image_url": card.default_image_url}
+
+
+class CardEdit(BaseModel):
+    player: str | None = Field(default=None, max_length=150)
+    year: int | None = Field(default=None, ge=1880, le=2100)
+    card_number: str | None = Field(default=None, max_length=50)
+    set_name: str | None = Field(default=None, max_length=150)
+    parallel: str | None = Field(default=None, max_length=100)
+    print_run: int | None = Field(default=None, ge=1, le=100000)
+    rookie: bool | None = None
+
+
+@router.patch("/cards/{card_id}")
+def edit_card(card_id: int, body: CardEdit, db: Session = Depends(get_db)):
+    """Fix a catalog card's details (e.g. a mistyped player name)."""
+    card = db.get(Card, card_id)
+    if card is None:
+        raise HTTPException(status_code=404, detail="Card not found")
+    if body.player:
+        name = clean_player(body.player)
+        player = db.get(Player, card.player_id)
+        others = db.scalars(select(Card.id).where(Card.player_id == card.player_id, Card.id != card_id)).first()
+        if others is None:
+            player.full_name = name  # only this card uses the record: rename it
+        else:
+            card.player_id = _get_or_create(db, Player, {"full_name": name}, {"sport_id": card.sport_id}).id
+    if body.year:
+        card.year = body.year
+    if body.card_number:
+        card.card_number = body.card_number.strip().lstrip("#")
+    if body.set_name:
+        cs = db.get(CardSet, card.set_id)
+        brand = db.get(Brand, card.brand_id)
+        name = body.set_name.strip()
+        if not name.lower().startswith(brand.name.lower()):
+            name = f"{brand.name} {name}"
+        card.set_id = _get_or_create(db, CardSet, {"name": name, "release_year": card.year, "brand_id": card.brand_id}, {"sport_id": cs.sport_id}).id
+    if body.rookie is not None:
+        card.rookie_flag = body.rookie
+    if body.parallel is not None or body.print_run is not None:
+        parallels = db.scalars(select(CardParallel).where(CardParallel.card_id == card_id)).all()
+        target = next((p for p in parallels if p.parallel_name.lower() != "base"), parallels[0] if parallels else None)
+        if target is None:
+            target = CardParallel(card_id=card_id, parallel_name=body.parallel or "Base", variation_name="Base")
+            db.add(target)
+        if body.parallel:
+            target.parallel_name = body.parallel.strip()
+        if body.print_run is not None:
+            target.print_run = body.print_run
+    db.flush()
+    # rebuild display title + search text
+    cs = db.get(CardSet, card.set_id)
+    player = db.get(Player, card.player_id)
+    par = db.scalars(select(CardParallel).where(CardParallel.card_id == card_id, CardParallel.parallel_name != "Base")).first()
+    card.title = f"{card.year} {cs.name} {player.full_name} #{card.card_number}" + (" RC" if card.rookie_flag else "")
+    card.search_text_normalized = " ".join(
+        x for x in [str(card.year), cs.name.lower(), player.full_name.lower(), card.card_number.lower(),
+                    "rc rookie" if card.rookie_flag else "", par.parallel_name.lower() if par else ""] if x
+    )
+    db.commit()
+    return {"card_id": card.id, "title": card.title, "player": player.full_name, "parallel": par.parallel_name if par else "Base",
+            "print_run": par.print_run if par else None}

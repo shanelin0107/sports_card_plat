@@ -57,6 +57,14 @@ def load_holdings(db: Session, item_ids: list[int] | None = None) -> list[Collec
 
     names = grade_company_names(db)
     engine = ValuationEngine(db, {item.card_id for item, *_ in rows})
+    # Holdings added by picking an existing card may not name a parallel; show the card's own.
+    card_parallel: dict[int, str] = {}
+    for cid, pname in db.execute(
+        select(CardParallel.card_id, CardParallel.parallel_name)
+        .where(CardParallel.card_id.in_({item.card_id for item, *_ in rows}), CardParallel.parallel_name != "Base")
+        .order_by(CardParallel.id)
+    ).all():
+        card_parallel.setdefault(cid, pname)
     photo_versions = {
         iid: str(int(ts.timestamp() * 1000))
         for iid, ts in db.execute(
@@ -99,7 +107,7 @@ def load_holdings(db: Session, item_ids: list[int] | None = None) -> list[Collec
                 brand=brand,
                 card_set=card_set,
                 card_number=card.card_number,
-                parallel=parallel,
+                parallel=parallel or card_parallel.get(item.card_id),
                 rookie_flag=bool(card.rookie_flag),
                 card_image_url=card.default_image_url,
                 photo_version=photo_versions.get(item.id),

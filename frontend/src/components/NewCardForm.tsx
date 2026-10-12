@@ -36,6 +36,7 @@ export function NewCardForm({
           player: f.get('player'),
           card_number: f.get('card_number'),
           parallel: f.get('parallel') || 'Base',
+          print_run: f.get('print_run') ? Number(f.get('print_run')) : null,
           rookie: f.get('rookie') === 'on',
           autograph: f.get('autograph') === 'on',
         }),
@@ -68,6 +69,7 @@ export function NewCardForm({
         {field('set_name', 'Set', { placeholder: 'Chrome' })}
         {field('card_number', 'Card #', { placeholder: '10' })}
         {field('parallel', 'Parallel', { placeholder: 'Base', required: false })}
+        {field('print_run', 'Numbered to (/__)', { type: 'number', min: 1, max: 100000, placeholder: 'e.g. 60', required: false })}
         <div className="space-y-1">
           <label htmlFor="nc-sport" className="eyebrow">
             Sport

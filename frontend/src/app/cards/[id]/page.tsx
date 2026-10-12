@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { AiPricePanel } from '@/components/AiPricePanel';
+import { CardEditForm } from '@/components/CardEditForm';
 import { CardThumb } from '@/components/CardThumb';
 import { EbayMarketPanel } from '@/components/EbayMarketPanel';
 import { ErrorState } from '@/components/ErrorState';
@@ -65,7 +66,19 @@ export default async function CardDetailPage({
           </h1>
           <p className="text-muted">
             {m.year} {m.card_set} #{m.card_number}
+            {m.parallel ? ` · ${m.parallel}` : ''}
+            {m.print_run ? ` /${m.print_run}` : ''}
           </p>
+          <CardEditForm
+            cardId={m.id}
+            player={m.player}
+            year={m.year}
+            cardNumber={m.card_number}
+            setName={m.card_set}
+            parallel={m.parallel}
+            printRun={m.print_run}
+            rookie={m.rookie_flag}
+          />
           </div>
         </div>
         <div className="flex flex-col gap-2">

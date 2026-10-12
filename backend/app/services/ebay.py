@@ -24,7 +24,6 @@ from app.services.ingestion.parsing import parse_title
 
 logger = logging.getLogger(__name__)
 
-API = "https://api.ebay.com"
 SCOPE_BROWSE = "https://api.ebay.com/oauth/api_scope"
 SCOPE_INSIGHTS = "https://api.ebay.com/oauth/api_scope/buy.marketplace.insights"
 SPORTS_CARD_SINGLES = "261328"  # Sports Mem, Cards & Fan Shop > Sports Trading Cards > Trading Card Singles
@@ -74,7 +73,7 @@ def get_token(scope: str = SCOPE_BROWSE) -> str | None:
     basic = base64.b64encode(f"{settings.ebay_client_id}:{settings.ebay_client_secret}".encode()).decode()
     with _http() as c:
         r = c.post(
-            f"{API}/identity/v1/oauth2/token",
+            f"{settings.ebay_api_base}/identity/v1/oauth2/token",
             headers={"Authorization": f"Basic {basic}", "Content-Type": "application/x-www-form-urlencoded"},
             data={"grant_type": "client_credentials", "scope": scope},
         )
@@ -106,7 +105,7 @@ def _get(path: str, params: dict, scope: str = SCOPE_BROWSE) -> dict | None:
         return None
     with _http() as c:
         r = c.get(
-            f"{API}{path}",
+            f"{settings.ebay_api_base}{path}",
             params=params,
             headers={"Authorization": f"Bearer {token}", "X-EBAY-C-MARKETPLACE-ID": "EBAY_US"},
         )
@@ -164,6 +163,11 @@ def match_listing(title: str, target: dict | None) -> tuple[bool, list[str]]:
 # --------------------------------------------------------------------------- public API
 
 
+def hires(url: str | None) -> str | None:
+    """eBay image URLs embed a size (s-l225); ask for a sharper one."""
+    return re.sub(r"/s-l\d+\.", "/s-l800.", url) if url else url
+
+
 def _grade_of(title: str) -> str:
     p = parse_title(title)
     return "Raw" if p.is_raw else f"{p.grader} {p.grade_value}"
@@ -205,7 +209,7 @@ def search_listings(query: str, target: dict | None = None, limit: int = 50) -> 
                 "shipping": ship,
                 "currency": price.get("currency", "USD"),
                 "url": it.get("itemWebUrl"),
-                "image": (it.get("image") or {}).get("imageUrl") or ((it.get("thumbnailImages") or [{}])[0].get("imageUrl")),
+                "image": hires((it.get("image") or {}).get("imageUrl") or ((it.get("thumbnailImages") or [{}])[0].get("imageUrl"))),
                 "buying_options": it.get("buyingOptions") or [],
                 "bid_count": it.get("bidCount"),
                 "ends_at": it.get("itemEndDate"),
@@ -238,7 +242,7 @@ def search_listings(query: str, target: dict | None = None, limit: int = 50) -> 
                     "date": (it.get("lastSoldDate") or "")[:10] or None,
                     "quantity": it.get("totalSoldQuantity"),
                     "url": it.get("itemWebUrl"),
-                    "image": (it.get("image") or {}).get("imageUrl"),
+                    "image": hires((it.get("image") or {}).get("imageUrl")),
                     "grade": _grade_of(title),
                     "exact_match": exact,
                     "mismatches": misses,

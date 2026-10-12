@@ -199,6 +199,11 @@ def card_detail(
     comps = engine.comps.get(card_id, [])
     names = grade_company_names(db)
     photo = _card_photos(db, {card_id}).get(card_id, (None, None))
+    from app.models.entities import CardParallel
+
+    named_par = db.scalars(
+        select(CardParallel).where(CardParallel.card_id == card_id, CardParallel.parallel_name != "Base").order_by(CardParallel.id)
+    ).first()
 
     counts: dict[str | None, int] = defaultdict(int)
     for c in comps:
@@ -234,6 +239,8 @@ def card_detail(
             card_set=card_set,
             player=player,
             sport=sport,
+            parallel=named_par.parallel_name if named_par else None,
+            print_run=named_par.print_run if named_par else None,
             rookie_flag=bool(card.rookie_flag),
             autograph_flag=bool(card.autograph_flag),
             patch_flag=bool(card.patch_flag),
