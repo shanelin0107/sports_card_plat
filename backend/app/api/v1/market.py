@@ -215,3 +215,14 @@ def _ai_fallback(db: Session, background: BackgroundTasks, card_id: int, grade: 
     query, ctx = _card_context(db, card_id)
     job = start_job(db, background, query=query, card_id=card_id, grade=gtext, ctx=ctx, auto_save=True)
     return {"status": "ai_started", "added": 0, "research_id": job.id}
+
+
+@router.get("/ebay/item/{item_id}")
+def ebay_item(item_id: str):
+    """One listing with its seller-entered item specifics mapped to catalog fields."""
+    if not ebay.ebay_enabled():
+        raise HTTPException(status_code=503, detail="eBay is off: set EBAY_CLIENT_ID and EBAY_CLIENT_SECRET on the backend.")
+    try:
+        return ebay.get_item(item_id)
+    except (ebay.EbayError, httpx.HTTPError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc

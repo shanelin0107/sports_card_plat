@@ -281,3 +281,114 @@ def check_access() -> dict:
     except (EbayError, httpx.HTTPError) as exc:
         out["error"] = str(exc)
     return out
+
+
+# --------------------------------------------------------------------------- item details
+
+_GRADERS = {
+    "psa": "PSA", "professional sports authenticator": "PSA",
+    "bgs": "BGS", "beckett": "BGS", "sgc": "SGC", "cgc": "CGC", "csg": "CGC",
+}
+
+
+def _aspect_map(item: dict) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for a in item.get("localizedAspects") or []:
+        name = (a.get("name") or "").strip().lower()
+        val = (a.get("value") or "").strip()
+        if name and val:
+            out[name] = val
+    return out
+
+
+def card_fields_from_item(item: dict) -> dict:
+    """Map eBay item specifics (seller-entered) to our catalog fields, falling back to the title."""
+    from app.services.ingestion.parsing import parse_title
+
+    a = _aspect_map(item)
+    title = item.get("title") or ""
+    parsed = parse_title(title)
+
+    def first(*keys):
+        for k in keys:
+            if a.get(k):
+                return a[k]
+        return None
+
+    year = None
+    for raw in (first("season", "year manufactured", "year"), title):
+        m = re.search(r"(19|20)\d{2}", raw or "")
+        if m:
+            year = int(m.group(0))
+            break
+
+    manufacturer = first("manufacturer", "brand")
+    set_name = first("set", "product")
+    if set_name:  # "2024-25 Panini Prizm Black" -> "Prizm Black"
+        set_name = re.sub(r"^\s*(19|20)\d{2}(\s*[-/]\s*\d{2,4})?\s*", "", set_name).strip() or set_name
+    if set_name and manufacturer and set_name.lower().startswith(manufacturer.lower() + " "):
+        set_name = set_name[len(manufacturer):].strip(" -") or set_name
+
+    number = first("card number")
+    if number:
+        number = number.lstrip("#").strip()
+    elif parsed.card_number:
+        number = parsed.card_number
+
+    print_run = None
+    pr = first("print run")
+    m = re.search(r"(\d+)", pr or "")
+    if m:
+        print_run = int(m.group(1))
+    else:
+        m = re.search(r"/\s*(\d{1,4})\b", title)
+        if m:
+            print_run = int(m.group(1))
+
+    grader = None
+    grade_value = None
+    graded = (first("graded") or "").lower()
+    if graded == "yes" or first("professional grader"):
+        g = (first("professional grader") or "").lower()
+        grader = next((v for k, v in _GRADERS.items() if k in g), None)
+        gv = first("grade")
+        m = re.search(r"\d+(\.5)?", gv or "")
+        grade_value = m.group(0) if m else None
+    if not grade_value and not parsed.is_raw:
+        grader, grade_value = parsed.grader, parsed.grade_value
+
+    features = (first("features", "card attributes") or "").lower()
+    autographed = (first("autographed") or "").lower() == "yes" or "auto" in features
+    sport = first("sport")
+    return {
+        "sport": sport.title() if sport else None,
+        "year": year,
+        "brand": manufacturer,
+        "set_name": set_name,
+        "player": first("player/athlete", "player", "athlete"),
+        "card_number": number,
+        "parallel": first("parallel/variety", "parallel"),
+        "print_run": print_run,
+        "rookie": "rookie" in features or bool(re.search(r"\b(rc|rookie)\b", title, re.I)),
+        "autograph": autographed,
+        "grader": grader,
+        "grade_value": grade_value,
+    }
+
+
+def get_item(item_id: str) -> dict:
+    from urllib.parse import quote
+
+    data = _get(f"/buy/browse/v1/item/{quote(item_id, safe='')}", {})
+    if data is None:
+        raise EbayError("Item not available")
+    price = data.get("price") or {}
+    return {
+        "item_id": data.get("itemId", item_id),
+        "title": data.get("title"),
+        "price": float(price["value"]) if price.get("value") else None,
+        "url": data.get("itemWebUrl"),
+        "image": hires((data.get("image") or {}).get("imageUrl")),
+        "card": card_fields_from_item(data),
+        "aspects": _aspect_map(data),
+    }

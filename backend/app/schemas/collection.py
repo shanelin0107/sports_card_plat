@@ -2,6 +2,8 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.api.v1.catalog import CardCreate
+
 
 class CollectionItemCreate(BaseModel):
     card_id: int
@@ -56,8 +58,21 @@ class CollectionItemOut(CollectionItemCreate):
     spark: list[float] = []
     median_30d: float | None = None
     sales_30d: int = 0
+    last_sale_price: float | None = None
+    last_sale_date: date | None = None
 
 
 class PhotoUpload(BaseModel):
     content_type: str = Field(pattern=r"^image/(jpeg|png|webp)$")
     data_base64: str = Field(max_length=4_000_000)  # ~3 MB decoded
+
+
+class QuickAddIn(BaseModel):
+    card: CardCreate
+    purchase_price: float = Field(ge=0)
+    purchase_date: date
+    quantity: int = Field(default=1, ge=1, le=10_000)
+    grader: str | None = Field(default=None, max_length=10)
+    grade_value: str | None = Field(default=None, max_length=10)
+    image_url: str | None = Field(default=None, max_length=1000)
+    notes: str | None = None

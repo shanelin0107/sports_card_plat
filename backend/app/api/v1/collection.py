@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.entities import Card, CardParallel, CollectionItem, CollectionItemPhoto, GradeCompany
-from app.schemas.collection import CollectionItemCreate, CollectionItemOut, PhotoUpload
+from app.schemas.collection import CollectionItemCreate, CollectionItemOut, PhotoUpload, QuickAddIn
 from app.services.portfolio import OWNER_PROFILE_ID, load_holdings
 
 router = APIRouter(prefix="/collection/items", tags=["collection"])
@@ -44,6 +44,44 @@ def list_collection_items(db: Session = Depends(get_db)):
 def create_collection_item(payload: CollectionItemCreate, db: Session = Depends(get_db)):
     _validate_refs(db, payload)
     item = CollectionItem(owner_profile_id=OWNER_PROFILE_ID, **payload.model_dump())
+    db.add(item)
+    db.commit()
+    return _one(db, item.id)
+
+
+@router.post("/quick-add", response_model=CollectionItemOut, status_code=201)
+def quick_add(body: QuickAddIn, db: Session = Depends(get_db)):
+    """Add a card straight from a search result: find/create the catalog card, then the holding."""
+    from sqlalchemy import select
+
+    from app.api.v1.catalog import upsert_card
+
+    card, parallel, _ = upsert_card(db, body.card)
+    company_id = None
+    if body.grade_value:
+        grader = (body.grader or "PSA").upper()
+        company_id = db.scalars(select(GradeCompany.id).where(GradeCompany.name == grader)).first()
+        if company_id is None:
+            gc = GradeCompany(name=grader)
+            db.add(gc)
+            db.flush()
+            company_id = gc.id
+    if body.image_url and not card.default_image_url and body.image_url.startswith("https://"):
+        card.default_image_url = body.image_url
+    item = CollectionItem(
+        owner_profile_id=OWNER_PROFILE_ID,
+        card_id=card.id,
+        card_parallel_id=parallel.id,
+        grade_company_id=company_id,
+        grade_value=body.grade_value,
+        is_graded=bool(body.grade_value),
+        quantity=body.quantity,
+        purchase_price=body.purchase_price,
+        purchase_date=body.purchase_date,
+        condition=f"{body.grader or 'PSA'} {body.grade_value}" if body.grade_value else "Raw",
+        notes=body.notes,
+        image_url=body.image_url,
+    )
     db.add(item)
     db.commit()
     return _one(db, item.id)

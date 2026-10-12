@@ -107,3 +107,59 @@ def test_sync_auto_saves_exact_sold(client, monkeypatch):
     assert again["added"] == 0  # idempotent
     ms = client.get(f"/api/v1/cards/{card['card_id']}/market-summary", params={"grade": "raw", "window": "all"}).json()
     assert ms["count"] == 1 and ms["median"] == 52.0 and ms["sales"][0]["source"] == "eBay" and ms["sales"][0]["url"]
+
+
+ITEM = {
+    "itemId": "v1|123|0",
+    "title": "2024-25 Panini Prizm Black Damian Lillard #91 Orange Wave 12/60 PSA 10",
+    "price": {"value": "140.00", "currency": "USD"},
+    "itemWebUrl": "https://www.ebay.com/itm/123",
+    "image": {"imageUrl": "https://i.ebayimg.com/images/g/x/s-l225.jpg"},
+    "localizedAspects": [
+        {"name": "Player/Athlete", "value": "Damian Lillard"},
+        {"name": "Season", "value": "2024-25"},
+        {"name": "Manufacturer", "value": "Panini"},
+        {"name": "Set", "value": "2024-25 Panini Prizm Black"},
+        {"name": "Card Number", "value": "#91"},
+        {"name": "Parallel/Variety", "value": "Orange Wave"},
+        {"name": "Print Run", "value": "60"},
+        {"name": "Graded", "value": "Yes"},
+        {"name": "Professional Grader", "value": "Professional Sports Authenticator (PSA)"},
+        {"name": "Grade", "value": "10"},
+        {"name": "Sport", "value": "Basketball"},
+    ],
+}
+
+
+def test_card_fields_from_item_specifics():
+    f = ebay.card_fields_from_item(ITEM)
+    assert f["player"] == "Damian Lillard" and f["year"] == 2024 and f["brand"] == "Panini"
+    assert f["set_name"] == "Prizm Black" and f["card_number"] == "91" and f["parallel"] == "Orange Wave"
+    assert f["print_run"] == 60 and f["grader"] == "PSA" and f["grade_value"] == "10" and f["sport"] == "Basketball"
+    # title-only fallback
+    g = ebay.card_fields_from_item({"title": "2023 Topps Chrome Julio Rodriguez #10 RC BGS 9.5"})
+    assert g["year"] == 2023 and g["card_number"] == "10" and g["rookie"] and g["grader"] == "BGS" and g["grade_value"] == "9.5"
+
+
+def test_item_endpoint_and_quick_add(client, monkeypatch):
+    def handler(req):
+        if req.url.path == "/identity/v1/oauth2/token":
+            return httpx.Response(200, json={"access_token": "tok", "expires_in": 7200})
+        if req.url.path.startswith("/buy/browse/v1/item/"):
+            return httpx.Response(200, json=ITEM)
+        return httpx.Response(404)
+
+    monkeypatch.setattr(ebay, "_http", lambda: httpx.Client(transport=httpx.MockTransport(handler)))
+    it = client.get("/api/v1/market/ebay/item/v1|123|0").json()
+    assert it["image"].endswith("s-l800.jpg") and it["card"]["parallel"] == "Orange Wave"
+    c = it["card"]
+    body = {
+        "card": {k: c[k] for k in ("sport", "year", "brand", "set_name", "player", "card_number", "parallel", "print_run", "rookie", "autograph")},
+        "purchase_price": 120, "purchase_date": "2026-10-10", "grader": c["grader"], "grade_value": c["grade_value"], "image_url": it["image"],
+    }
+    h = client.post("/api/v1/collection/items/quick-add", json=body).json()
+    assert h["grade_label"] == "PSA 10" and h["parallel"] == "Orange Wave" and h["title"].startswith("2024 Panini Prizm Black Damian Lillard #91")
+    assert h["image_url"] == it["image"] and h["card_image_url"] == it["image"]
+    # adding the same card again reuses the catalog card
+    h2 = client.post("/api/v1/collection/items/quick-add", json=body).json()
+    assert h2["card_id"] == h["card_id"]

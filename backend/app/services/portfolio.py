@@ -84,6 +84,7 @@ def load_holdings(db: Session, item_ids: list[int] | None = None) -> list[Collec
         pnl = round(est - cost, 2) if est is not None else None
         spark = [c.total_price for c in reversed(engine.comps_for(vkey, "all")[:SPARK_POINTS])]
         last30 = [c.total_price for c in engine.comps_for(vkey, "30d")]
+        all_sales = engine.comps_for(vkey, "all")  # newest first
         out.append(
             CollectionItemOut(
                 id=item.id,
@@ -122,6 +123,8 @@ def load_holdings(db: Session, item_ids: list[int] | None = None) -> list[Collec
                 spark=spark,
                 median_30d=round(float(statistics.median(last30)), 2) if last30 else None,
                 sales_30d=len(last30),
+                last_sale_price=all_sales[0].total_price if all_sales else None,
+                last_sale_date=all_sales[0].sold_at.date() if all_sales else None,
             )
         )
     return out

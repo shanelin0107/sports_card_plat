@@ -101,9 +101,14 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
           </p>
         </div>
         {editing !== 'new' && (
-          <button className="btn-primary" onClick={() => setEditing('new')}>
-            + Add card
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/search" className="btn-primary text-[#06281A] hover:text-[#06281A]">
+              + Add from eBay search
+            </Link>
+            <button className="btn-ghost" onClick={() => setEditing('new')}>
+              Add manually
+            </button>
+          </div>
         )}
       </div>
 
@@ -120,7 +125,7 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
           <p className="p-5 text-muted">Nothing here yet — add your first card above.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px] border-collapse text-[13px]">
+            <table className="w-full min-w-[980px] border-collapse text-[13px]">
               <thead>
                 <tr>
                   <th className="th pl-5">Card</th>
@@ -130,6 +135,7 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
                   <th className="th">Bought</th>
                   <th className="th text-right">Est.</th>
                   <th className="th text-right">30d median · vol</th>
+                  <th className="th text-right">Last sale</th>
                   <th className="th text-right">P&amp;L</th>
                   <th className="th pr-5 text-right">
                     <span className="sr-only">Actions</span>
@@ -140,7 +146,7 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
                 {items.map((h) =>
                   editing === h.id ? (
                     <tr key={h.id} className="border-t border-line">
-                      <td colSpan={9} className="p-4">
+                      <td colSpan={10} className="p-4">
                         <HoldingForm draft={fromHolding(h)} itemId={h.id} onSaved={(x) => saved(x, false)} onCancel={() => setEditing(null)} />
                       </td>
                     </tr>
@@ -171,6 +177,10 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
                       <td className="td text-right">
                         {h.sales_30d > 0 ? money(h.median_30d) : '—'}
                         <span className="block text-[11px] text-muted">{h.sales_30d} sold</span>
+                      </td>
+                      <td className="td text-right">
+                        {money(h.last_sale_price)}
+                        <span className="block text-[11px] text-muted">{h.last_sale_date ?? 'no sales yet'}</span>
                       </td>
                       <td className={`td text-right ${tone(h.unrealized_pnl)}`}>
                         {signedMoney(h.unrealized_pnl)}

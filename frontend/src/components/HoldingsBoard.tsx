@@ -26,13 +26,13 @@ export function HoldingsBoard({ holdings }: { holdings: Holding[] }) {
       <section aria-label="Holdings" className="panel min-w-0 flex-[999_1_560px]">
         <div className="panel-head">
           <h2 className="panel-title">Holdings</h2>
-          <Link href="/collection?add=1" className="btn-ghost text-ink">
+          <Link href="/search" className="btn-ghost text-ink">
             + Add card
           </Link>
         </div>
         {holdings.length === 0 ? (
           <p className="p-5 text-muted">
-            No cards yet. <Link href="/collection?add=1" className="text-link">Add your first card →</Link>
+            No cards yet. <Link href="/search" className="text-link">Search eBay to add your first card →</Link>
           </p>
         ) : (
           <div className="overflow-x-auto">

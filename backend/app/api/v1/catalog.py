@@ -65,8 +65,8 @@ def card_parallels(card_id: int, db: Session = Depends(get_db)):
     return [{"id": i, "parallel_name": p, "variation_name": v} for i, p, v in rows]
 
 
-@router.post("/cards", status_code=201)
-def create_card(body: CardCreate, db: Session = Depends(get_db)):
+def upsert_card(db: Session, body: CardCreate):
+    """Find or create the catalog card (and parallel) described by `body`. Caller commits."""
     sport = _get_or_create(db, Sport, {"name": body.sport.strip().title()})
     brand = _get_or_create(db, Brand, {"name": body.brand.strip()})
     set_name = body.set_name.strip()
@@ -114,6 +114,12 @@ def create_card(body: CardCreate, db: Session = Depends(get_db)):
         if parallel_name.lower() != "base" and parallel_name.lower() not in card.search_text_normalized:
             card.search_text_normalized += f" {parallel_name.lower()}"
 
+    return card, parallel, created
+
+
+@router.post("/cards", status_code=201)
+def create_card(body: CardCreate, db: Session = Depends(get_db)):
+    card, parallel, created = upsert_card(db, body)
     db.commit()
     return {"card_id": card.id, "card_parallel_id": parallel.id, "title": card.title, "created": created}
 

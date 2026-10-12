@@ -9,7 +9,7 @@ import { Logo } from './Logo';
 const NAV = [
   { href: '/', label: 'Dashboard' },
   { href: '/collection', label: 'Collection' },
-  { href: '/search', label: 'Comps' },
+  { href: '/search', label: 'Search eBay' },
   { href: '/review', label: 'Ingestion' },
 ];
 
@@ -53,12 +53,12 @@ export function Header({ reviewCount = 0, showLogout = false }: { reviewCount?: 
           }}
         >
           <label htmlFor="global-search" className="sr-only">
-            Search cards
+            Search eBay for a card
           </label>
           <input
             id="global-search"
             className="field"
-            placeholder="2023 topps ohtani psa 10"
+            placeholder="Search eBay: 2024 prizm black lillard orange wave"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />

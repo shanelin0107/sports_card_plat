@@ -32,6 +32,8 @@ export type Holding = {
   spark: number[];
   median_30d: number | null;
   sales_30d: number;
+  last_sale_price: number | null;
+  last_sale_date: string | null;
 };
 
 export type Mover = {
