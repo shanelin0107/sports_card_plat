@@ -312,7 +312,9 @@ def card_fields_from_item(item: dict) -> dict:
     def first(*keys):
         for k in keys:
             if a.get(k):
-                return a[k]
+                # sellers sometimes bracket values: "[Base]" -> "Base"
+                v = a[k].strip().strip("[]()").strip()
+                return v or None
         return None
 
     year = None

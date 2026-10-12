@@ -121,7 +121,7 @@ ITEM = {
         {"name": "Manufacturer", "value": "Panini"},
         {"name": "Set", "value": "2024-25 Panini Prizm Black"},
         {"name": "Card Number", "value": "#91"},
-        {"name": "Parallel/Variety", "value": "Orange Wave"},
+        {"name": "Parallel/Variety", "value": "[Orange Wave]"},
         {"name": "Print Run", "value": "60"},
         {"name": "Graded", "value": "Yes"},
         {"name": "Professional Grader", "value": "Professional Sports Authenticator (PSA)"},
