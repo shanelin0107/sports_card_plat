@@ -24,5 +24,7 @@ services:
         sync: false
       - key: EBAY_CLIENT_SECRET # eBay Production Cert ID (optional)
         sync: false
+      - key: COMPSAPI_KEY # optional: eBay sold history from compsapi.com
+        sync: false
       - key: CORS_ORIGINS # browsers go through the Next.js proxy, so this can stay empty
         value: ""

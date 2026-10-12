@@ -60,6 +60,9 @@ class CollectionItemOut(CollectionItemCreate):
     sales_30d: int = 0
     last_sale_price: float | None = None
     last_sale_date: date | None = None
+    # Newest first, up to 5: [{"price": 32.0, "date": "2026-10-04"}]
+    recent_sales: list[dict] = []
+    sales_fetched_at: datetime | None = None
 
 
 class PhotoUpload(BaseModel):

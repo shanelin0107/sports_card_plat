@@ -34,6 +34,27 @@ export type Holding = {
   sales_30d: number;
   last_sale_price: number | null;
   last_sale_date: string | null;
+  recent_sales?: { price: number; date: string }[];
+  sales_fetched_at?: string | null;
+};
+
+export type SyncResult = {
+  status: 'synced' | 'recent' | 'quota' | 'ebay_off' | 'no_sold_access' | 'ai_started' | 'ai_running' | 'ai_recent' | string;
+  source?: string;
+  added: number;
+  found?: number;
+  matched?: number;
+  message?: string;
+  research_id?: number;
+  skipped?: { title: string; total: number; date: string | null; url: string; why: string[] }[];
+};
+
+export type CompsApiStatus = {
+  configured: boolean;
+  plan?: string;
+  monthly_used?: number;
+  monthly_quota?: number;
+  error?: string;
 };
 
 export type Mover = {

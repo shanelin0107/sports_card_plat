@@ -99,7 +99,7 @@ export function MarketTrend({ cardId, grade }: { cardId: number; grade: string }
         }
       }, 4000);
     };
-    api<{ status: string; added: number; research_id?: number }>(`/market/sync/${cardId}?grade=${grade}`, { method: 'POST' })
+    api<{ status: string; added: number; research_id?: number; message?: string }>(`/market/sync/${cardId}?grade=${grade}`, { method: 'POST' })
       .then((r) => {
         if (cancelled) return;
         if (r.added > 0) {
@@ -112,6 +112,8 @@ export function MarketTrend({ cardId, grade }: { cardId: number; grade: string }
           pollJob(r.research_id);
         } else if (r.status === 'ai_recent') {
           setSyncNote('AI already searched for this card’s sales in the last 24 hours.');
+        } else if (r.status === 'quota') {
+          setSyncNote('CompsAPI monthly quota is used up — new sales will load after it resets on the 1st.');
         } else if (r.status === 'no_sold_access') {
           setSyncNote('eBay doesn’t share sold history with your key, and AI price check is off.');
         }

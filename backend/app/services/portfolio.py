@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import statistics
-from datetime import date
+from datetime import UTC, date, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.entities import (
@@ -16,6 +16,7 @@ from app.models.entities import (
     CollectionItem,
     CollectionItemPhoto,
     GradeCompany,
+    MarketFetchLog,
     Player,
     ValuationSnapshot,
 )
@@ -73,6 +74,14 @@ def load_holdings(db: Session, item_ids: list[int] | None = None) -> list[Collec
             )
         ).all()
     }
+    # When sold history was last pulled for each card+grade (shown as "updated 3h ago").
+    fetched: dict[tuple[int, str], datetime] = {}
+    for cid, g, ts in db.execute(
+        select(MarketFetchLog.card_id, MarketFetchLog.grade, func.max(MarketFetchLog.fetched_at))
+        .where(MarketFetchLog.card_id.in_({item.card_id for item, *_ in rows}), MarketFetchLog.status == "ok")
+        .group_by(MarketFetchLog.card_id, MarketFetchLog.grade)
+    ).all():
+        fetched[(cid, g)] = ts
     out: list[CollectionItemOut] = []
     for item, card, brand, card_set, player, parallel in rows:
         gkey = grade_key_for_item(item.grade_company_id, item.grade_value, item.is_graded)
@@ -124,7 +133,9 @@ def load_holdings(db: Session, item_ids: list[int] | None = None) -> list[Collec
                 median_30d=round(float(statistics.median(last30)), 2) if last30 else None,
                 sales_30d=len(last30),
                 last_sale_price=all_sales[0].total_price if all_sales else None,
-                last_sale_date=all_sales[0].sold_at.date() if all_sales else None,
+                last_sale_date=all_sales[0].sold_at.astimezone(UTC).date() if all_sales else None,
+                recent_sales=[{"price": c.total_price, "date": c.sold_at.astimezone(UTC).date().isoformat()} for c in all_sales[:5]],
+                sales_fetched_at=fetched.get((item.card_id, _gkey(gkey))),
             )
         )
     return out
@@ -202,3 +213,10 @@ def previous_unit_prices(db: Session, holdings: list[CollectionItemOut], before:
         k = (s.card_id, s.grade_company_id, s.grade_value)
         prev.setdefault(k, float(s.estimated_price))
     return prev
+
+
+def _gkey(g: GradeKey) -> str:
+    """The grade key the sync endpoint logs under ("raw", "psa10", ...)."""
+    if g.is_raw:
+        return "raw"
+    return f"psa{g.grade_value}" if g.grade_value else "all"

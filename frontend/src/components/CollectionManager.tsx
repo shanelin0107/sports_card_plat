@@ -1,19 +1,45 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { api } from '@/lib/client-api';
-import { money, pct, signedMoney, tone } from '@/lib/format';
+import { longDate, money, pct, shortDate, signedMoney, tone } from '@/lib/format';
 import { guessCard } from '@/lib/guess-card';
 import { holdingImage, resizeForUpload } from '@/lib/images';
-import type { CardSearchResult, Holding } from '@/lib/types';
+import type { CardSearchResult, CompsApiStatus, Holding, SyncResult } from '@/lib/types';
 
 import { CardPicker } from './CardPicker';
 import { CardThumb } from './CardThumb';
 import { EbayPhotoPicker } from './EbayPhotoPicker';
 import { SalesGrid, emptyRow, saveSales, validRows, type SaleRow } from './SalesGrid';
 import { NewCardForm } from './NewCardForm';
+
+const gradeParam = (h: Holding) => (h.grade_value ? `psa${h.grade_value}` : 'raw');
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+type RowSync = { busy?: boolean; note?: string; bad?: boolean };
+
+function describeSync(r: SyncResult): RowSync {
+  switch (r.status) {
+    case 'synced':
+      if (r.added > 0) return { note: `+${r.added} new sale${r.added > 1 ? 's' : ''}` };
+      if (r.matched) return { note: 'Up to date' };
+      return { note: r.found ? `No exact match (${r.found} similar skipped)` : 'No sales found on eBay' };
+    case 'recent':
+      return { note: 'Checked in the last 24h' };
+    case 'quota':
+      return { note: 'Monthly quota used up', bad: true };
+    case 'ebay_off':
+    case 'no_sold_access':
+      return { note: 'Add COMPSAPI_KEY to fetch sales', bad: true };
+    case 'ai_started':
+    case 'ai_running':
+      return { note: 'AI is searching… open the card' };
+    default:
+      return { note: r.message ?? r.status };
+  }
+}
 
 const GRADES = ['raw', '10', '9', '8', '7', '6', '5', '4', '3', '2', '1'];
 const PSA_ID = 1;
@@ -64,6 +90,73 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [rowSync, setRowSync] = useState<Record<number, RowSync>>({});
+  const [quota, setQuota] = useState<CompsApiStatus | null>(null);
+  const [bulk, setBulk] = useState<{ done: number; total: number } | null>(null);
+
+  const refreshQuota = () =>
+    api<CompsApiStatus>('/market/compsapi/status')
+      .then(setQuota)
+      .catch(() => setQuota(null));
+  useEffect(() => {
+    refreshQuota();
+  }, []);
+
+  async function reloadItems() {
+    try {
+      setItems(await api<Holding[]>('/collection/items'));
+    } catch {
+      /* keep what we have */
+    }
+  }
+
+  async function syncOne(h: Holding, force: boolean): Promise<SyncResult | null> {
+    setRowSync((s) => ({ ...s, [h.id]: { busy: true } }));
+    try {
+      const r = await api<SyncResult>(`/market/sync/${h.card_id}?grade=${gradeParam(h)}${force ? '&force=true' : ''}`, { method: 'POST' });
+      setRowSync((s) => ({ ...s, [h.id]: describeSync(r) }));
+      return r;
+    } catch (e) {
+      setRowSync((s) => ({ ...s, [h.id]: { note: (e as Error).message, bad: true } }));
+      return null;
+    }
+  }
+
+  /** The row's ↻ button: always asks eBay again (spends one search). */
+  async function syncRow(h: Holding) {
+    const r = await syncOne(h, true);
+    if (r && r.added > 0) await reloadItems();
+    refreshQuota();
+  }
+
+  /** Header button: every card once; cards checked in the last 24h are skipped for free. */
+  async function syncAll() {
+    const seen = new Set<string>();
+    const todo = items.filter((h) => {
+      const k = `${h.card_id}|${gradeParam(h)}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    let added = 0;
+    let fetched = 0;
+    setNotice(null);
+    setBulk({ done: 0, total: todo.length });
+    for (let i = 0; i < todo.length; i++) {
+      const r = await syncOne(todo[i], false);
+      added += r?.added ?? 0;
+      setBulk({ done: i + 1, total: todo.length });
+      if (r?.status === 'quota') break;
+      if (r?.status === 'synced') {
+        fetched += 1;
+        if (quota?.plan === 'free' && i < todo.length - 1) await sleep(6500); // free plan: 10 searches/minute
+      }
+    }
+    await reloadItems();
+    refreshQuota();
+    setBulk(null);
+    setNotice(`Sales updated: ${fetched} card${fetched === 1 ? '' : 's'} checked on eBay, ${added} new sale${added === 1 ? '' : 's'} added.`);
+  }
 
   async function remove(id: number) {
     setError(null);
@@ -81,10 +174,13 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
     setItems((xs) => (isNew ? [h, ...xs] : xs.map((x) => (x.id === h.id ? h : x))));
     setEditing(null);
     if (isNew) {
-      // Kick off market data for the new card (eBay sold history, or AI search) in the background.
-      const g = h.grade_value ? `psa${h.grade_value}` : 'raw';
-      api(`/market/sync/${h.card_id}?grade=${g}`, { method: 'POST' }).catch(() => {});
-      setNotice(`Added. Looking up recent sales for ${h.player ?? 'this card'} — open the card to watch it fill in.`);
+      // Pull this card's recent eBay sales right away so the row fills in.
+      setNotice(`Added. Looking up recent sales for ${h.player ?? 'this card'}…`);
+      syncOne(h, false).then(async (r) => {
+        if (r && r.added > 0) await reloadItems();
+        setNotice(r ? `Added. ${describeSync(r).note}.` : 'Added.');
+        refreshQuota();
+      });
     }
   }
 
@@ -109,10 +205,31 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
             <button className="btn-ghost" onClick={() => setEditing('new')}>
               Add manually
             </button>
+            {quota?.configured && items.length > 0 && (
+              <button className="btn-ghost" onClick={syncAll} disabled={bulk !== null} aria-live="polite">
+                {bulk ? `Updating ${bulk.done}/${bulk.total}…` : '↻ Update sales'}
+              </button>
+            )}
           </div>
         )}
       </div>
 
+      {quota && !quota.configured && (
+        <p className="text-[12px] text-muted">
+          Recent sales fill in automatically once you add a free CompsAPI key: get one at{' '}
+          <a href="https://app.compsapi.com" target="_blank" rel="noopener noreferrer" className="text-link">
+            app.compsapi.com
+          </a>
+          , put <code className="font-mono">COMPSAPI_KEY=…</code> in <code className="font-mono">.env</code> and restart.
+        </p>
+      )}
+      {quota?.configured && quota.monthly_quota != null && (
+        <p className="text-[12px] text-muted">
+          eBay sales via CompsAPI · {quota.monthly_used ?? 0} / {quota.monthly_quota} searches used this month ({quota.plan}). Each card is
+          checked at most once a day unless you press ↻.
+        </p>
+      )}
+      {quota?.configured && quota.error && <p className="text-[12px] text-down">CompsAPI: {quota.error}</p>}
       {editing === 'new' && <HoldingForm draft={blank()} newCardQuery={newCardQuery} onSaved={(h) => saved(h, true)} onCancel={() => setEditing(null)} />}
       {error && <p className="text-[13px] text-down">{error}</p>}
       {notice && (
@@ -126,7 +243,7 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
           <p className="p-5 text-muted">Nothing here yet — add your first card above.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] border-collapse text-[13px]">
+            <table className="w-full min-w-[1120px] border-collapse text-[13px]">
               <thead>
                 <tr>
                   <th className="th pl-5">Card</th>
@@ -136,6 +253,7 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
                   <th className="th">Bought</th>
                   <th className="th text-right">Est.</th>
                   <th className="th text-right">30d median · vol</th>
+                  <th className="th text-right">Recent sales</th>
                   <th className="th text-right">Last sale</th>
                   <th className="th text-right">P&amp;L</th>
                   <th className="th pr-5 text-right">
@@ -147,7 +265,7 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
                 {items.map((h) =>
                   editing === h.id ? (
                     <tr key={h.id} className="border-t border-line">
-                      <td colSpan={10} className="p-4">
+                      <td colSpan={11} className="p-4">
                         <HoldingForm draft={fromHolding(h)} itemId={h.id} onSaved={(x) => saved(x, false)} onCancel={() => setEditing(null)} />
                       </td>
                     </tr>
@@ -180,8 +298,43 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
                         <span className="block text-[11px] text-muted">{h.sales_30d} sold</span>
                       </td>
                       <td className="td text-right">
-                        {money(h.last_sale_price)}
-                        <span className="block text-[11px] text-muted">{h.last_sale_date ?? 'no sales yet'}</span>
+                        {h.recent_sales && h.recent_sales.length > 0 ? (
+                          <span className="inline-flex flex-wrap justify-end gap-1" aria-label="Last sales, newest first">
+                            {h.recent_sales.map((s, i) => (
+                              <span key={i} title={longDate(s.date)} className="rounded bg-raised px-1.5 py-0.5 text-center leading-tight">
+                                {money(s.price, { whole: s.price >= 100 })}
+                                <span className="block text-[10px] text-muted">{shortDate(s.date)}</span>
+                              </span>
+                            ))}
+                          </span>
+                        ) : (
+                          <span className="text-muted">—</span>
+                        )}
+                      </td>
+                      <td className="td text-right">
+                        <span className="inline-flex items-start justify-end gap-1.5">
+                          <span>
+                            {money(h.last_sale_price)}
+                            <span className="block text-[11px] text-muted">{h.last_sale_date ? longDate(h.last_sale_date) : 'no sales yet'}</span>
+                          </span>
+                          {quota?.configured && (
+                            <button
+                              type="button"
+                              onClick={() => syncRow(h)}
+                              disabled={rowSync[h.id]?.busy || bulk !== null}
+                              aria-label={`Fetch latest eBay sales for ${h.title}`}
+                              title="Fetch latest eBay sales (uses 1 search)"
+                              className="-mt-1 h-8 w-8 rounded font-sans text-[15px] text-muted hover:bg-raised hover:text-ink disabled:opacity-50"
+                            >
+                              <span className={rowSync[h.id]?.busy ? 'inline-block animate-spin' : ''}>↻</span>
+                            </button>
+                          )}
+                        </span>
+                        {rowSync[h.id]?.note && (
+                          <span role="status" className={`block font-sans text-[11px] ${rowSync[h.id]?.bad ? 'text-down' : 'text-muted'}`}>
+                            {rowSync[h.id]?.note}
+                          </span>
+                        )}
                       </td>
                       <td className={`td text-right ${tone(h.unrealized_pnl)}`}>
                         {signedMoney(h.unrealized_pnl)}

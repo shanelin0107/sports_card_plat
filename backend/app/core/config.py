@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     ebay_client_secret: str = ""
     ebay_api_base: str = "https://api.ebay.com"  # https://api.sandbox.ebay.com for sandbox keys
 
+    # CompsAPI (compsapi.com): eBay sold listings as JSON. Empty = off.
+    compsapi_key: str = ""
+    compsapi_base: str = "https://api.compsapi.com"
+    compsapi_days: int = 365  # free plan allows up to 1 year
+    compsapi_refresh_hours: int = 24  # don't re-query the same card+grade sooner than this
+
     ingestion_feed_path: str = str(PROJECT_ROOT / "seed" / "ebay_sample_feed.json")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")

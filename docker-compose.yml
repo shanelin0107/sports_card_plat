@@ -33,6 +33,7 @@ services:
       AI_MODEL: ${AI_MODEL:-claude-sonnet-5-5}
       EBAY_CLIENT_ID: ${EBAY_CLIENT_ID:-}
       EBAY_CLIENT_SECRET: ${EBAY_CLIENT_SECRET:-}
+      COMPSAPI_KEY: ${COMPSAPI_KEY:-}
       CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
     ports:
       - "8000:8000"

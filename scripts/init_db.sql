@@ -287,3 +287,18 @@ UPDATE player SET full_name = btrim(regexp_replace(full_name, '\s*\S*/\d+\S*', '
 UPDATE card SET title = regexp_replace(title, '\s+#?\d*/\d+\b', '', 'g'),
                 search_text_normalized = regexp_replace(search_text_normalized, '\s+#?\d*/\d+\b', '', 'g')
   WHERE title ~ '\s#?\d*/\d+\b';
+
+-- v0.6: when sold history was last pulled from a paid API (CompsAPI) for a card+grade,
+-- so opening a card page doesn't spend a request every time.
+CREATE TABLE IF NOT EXISTS market_fetch_log (
+  id SERIAL PRIMARY KEY,
+  card_id INT NOT NULL REFERENCES card(id) ON DELETE CASCADE,
+  grade VARCHAR(20) NOT NULL DEFAULT 'all',
+  source VARCHAR(30) NOT NULL,
+  status VARCHAR(20) NOT NULL,
+  found INT NOT NULL DEFAULT 0,
+  added INT NOT NULL DEFAULT 0,
+  error_message TEXT,
+  fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_market_fetch_log_card ON market_fetch_log(card_id, grade, source, fetched_at DESC);

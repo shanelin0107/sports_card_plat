@@ -60,3 +60,20 @@ Set `EBAY_CLIENT_ID` (Production App ID) and `EBAY_CLIENT_SECRET` (Production Ce
 developer.ebay.com → Application Keys. Every keyset can read live listings (Browse API); sold
 history needs eBay's Marketplace Insights approval, which the app detects automatically
 (`GET /api/v1/market/ebay/status`).
+
+## Recent eBay sales per card (optional, CompsAPI)
+eBay's own sold-history API is partner-only and its sold search page is behind a captcha,
+so sold prices come from [CompsAPI](https://compsapi.com) (eBay sold listings as JSON).
+
+1. Get a free key at https://app.compsapi.com (100 searches/month, 1 year of history;
+   paid plans from $9 for 5,000).
+2. Set `COMPSAPI_KEY` in `.env` locally (and on Render), then restart.
+
+What it does:
+- Collection page: **↻** on a row fetches that card's recent sales (1 search);
+  **Update sales** checks every card, skipping any checked in the last 24 hours (free).
+  Adding a card fetches its sales right away. Opening a card page also syncs, at most once a day.
+- Each sale's title is checked against the card (player, year, set, #, parallel, grade).
+  Only exact matches are saved; other parallels, other grades, lots and reprints are skipped.
+  Prices include shipping; Best Offer sales use the real accepted price.
+- Wrong sale saved? Open the card and use **Wrong sale?** to remove it; it won't come back.

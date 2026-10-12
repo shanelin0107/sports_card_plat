@@ -126,12 +126,30 @@ def _norm(s: str) -> str:
     return re.sub(r"[^a-z0-9/#]+", " ", s.lower())
 
 
-def match_listing(title: str, target: dict | None) -> tuple[bool, list[str]]:
-    """Heuristic: does this listing title describe the target card? Returns (exact, mismatches)."""
+# Words that mean a listing is a parallel/variation, not the base card.
+_PARALLEL_WORDS = re.compile(
+    r"\b(silver|holo|refractor|lazer|laser|mojo|wave|shimmer|hyper|disco|ice|camo|scope|cracked|"
+    r"gold|red|blue|green|orange|purple|pink|black|white|neon|tie[ -]?dye|snakeskin|velocity|"
+    r"pulsar|choice|fast break|no huddle|sp|ssp|variation|var|auto|autograph|patch|numbered)\b"
+    r"|/\s*\d{1,4}\b"
+)
+_TEAMS = re.compile(r"\b(red sox|white sox|blue jays|red wings|blue jackets|golden state|vegas golden knights|orange county)\b")
+# Listings that are never a single-card sale.
+_JUNK = re.compile(r"\b(lot|lots|reprint|custom|digital|break|case|box|pack|you pick|u pick|choose)\b")
+
+
+def match_listing(title: str, target: dict | None, strict_base: bool = False) -> tuple[bool, list[str]]:
+    """Heuristic: does this listing title describe the target card? Returns (exact, mismatches).
+
+    strict_base: for a base card (no parallel), reject titles that name a parallel/variation,
+    and reject lots, reprints, breaks and sealed product.
+    """
     if not target:
         return False, []
     t = f" {_norm(title)} "
     misses: list[str] = []
+    if strict_base and _JUNK.search(t):
+        misses.append("not a single card")
     player = (target.get("player") or "").lower().split()
     if player and player[-1] not in t:
         misses.append("player")
@@ -144,6 +162,13 @@ def match_listing(title: str, target: dict | None) -> tuple[bool, list[str]]:
     parallel = (target.get("parallel") or "").lower()
     if parallel and parallel != "base" and not all(w in t for w in parallel.split()):
         misses.append("parallel")
+    elif strict_base and (not parallel or parallel == "base"):
+        # Ignore words that belong to the player, the set ("Prizm Black") or a team ("Red Sox").
+        rest = _TEAMS.sub(" ", t)
+        for w in f"{target.get('player') or ''} {target.get('product') or ''}".lower().split():
+            rest = rest.replace(f" {w} ", " ")
+        if _PARALLEL_WORDS.search(rest):
+            misses.append("parallel")
     product = (target.get("product") or "").lower()
     for w in [w for w in product.split() if w not in {"panini", "topps", "upper", "deck"}]:
         if w not in t:

@@ -7,8 +7,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models.entities import AiPriceResearch, Card, CardParallel, CardSet, Player, SaleComp
-from app.services import ebay
+from app.core.config import settings
+from app.models.entities import AiPriceResearch, Card, CardParallel, CardSet, MarketFetchLog, Player, SaleComp
+from app.services import compsapi, ebay
 from app.services.comps import CompError, create_confirmed_comp
 
 router = APIRouter(prefix="/market", tags=["market"])
@@ -139,6 +140,8 @@ def sync_card(
     """
     import time
 
+    if compsapi.enabled():
+        return _sync_compsapi(db, card_id, grade, force)
     if not ebay.ebay_enabled():
         return _ai_fallback(db, background, card_id, grade, force) or {"status": "ebay_off", "added": 0}
     key = (card_id, grade)
@@ -177,6 +180,85 @@ def sync_card(
             continue
     db.commit()
     return {"status": "synced", "added": added, "sold_found": len(data["sold"] or [])}
+
+
+def _sync_compsapi(db: Session, card_id: int, grade: str | None, force: bool) -> dict:
+    """Pull sold history from CompsAPI and auto-save sales that match this exact card.
+
+    Each call spends one request of the monthly quota, so a card+grade is fetched at most
+    once per COMPSAPI_REFRESH_HOURS unless the owner presses the button (force).
+    """
+    gkey = (grade or "all").lower()
+    last = db.scalars(
+        select(MarketFetchLog)
+        .where(MarketFetchLog.card_id == card_id, MarketFetchLog.grade == gkey, MarketFetchLog.source == "compsapi")
+        .order_by(MarketFetchLog.fetched_at.desc())
+    ).first()
+    if last and not force and last.status in ("ok", "quota"):
+        age = datetime.now(UTC) - last.fetched_at
+        if age < timedelta(hours=settings.compsapi_refresh_hours):
+            return {"status": "recent", "source": "compsapi", "added": 0, "fetched_at": last.fetched_at.isoformat()}
+
+    gtext = _grade_text(grade)
+    query, target = card_target(db, card_id, None)  # grade goes in as a filter, not keywords
+    target["grade"] = gtext
+    log = MarketFetchLog(card_id=card_id, grade=gkey, source="compsapi", status="ok")
+    try:
+        data = compsapi.fetch_sold(query, target, gtext)
+    except compsapi.QuotaReached as exc:
+        log.status, log.error_message = "quota", str(exc)
+        db.add(log)
+        db.commit()
+        return {"status": "quota", "source": "compsapi", "added": 0, "message": str(exc)}
+    except (compsapi.CompsApiError, httpx.HTTPError) as exc:
+        log.status, log.error_message = "error", str(exc)[:1000]
+        db.add(log)
+        db.commit()
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    added = 0
+    exact = [r for r in data["items"] if r["exact_match"] and r["date"]]
+    for r in exact:
+        try:
+            _, created = create_confirmed_comp(
+                db,
+                card_id=card_id,
+                listing_id=f"ebay-{r['item_id']}",  # same id a pasted eBay link gets, so no duplicates
+                title=r["title"],
+                url=r["url"],
+                price=r["total"],
+                date=r["date"],
+                grade=r["grade"],
+                source="eBay",
+                match_method="compsapi_auto",
+                payload=r,
+            )
+            added += int(created)
+        except CompError:
+            continue  # removed earlier by the owner, or unusable
+    log.found, log.added = len(data["items"]), added
+    db.add(log)
+    db.commit()
+    skipped = [
+        {"title": r["title"], "total": r["total"], "date": r["date"], "url": r["url"], "why": r["mismatches"]}
+        for r in data["items"]
+        if not r["exact_match"]
+    ]
+    return {
+        "status": "synced",
+        "source": "compsapi",
+        "query": data["query"],
+        "found": len(data["items"]),
+        "matched": len(exact),
+        "added": added,
+        "skipped": skipped[:10],
+    }
+
+
+@router.get("/compsapi/status")
+def compsapi_status():
+    """Is CompsAPI configured, and how much of this month's quota is used (free call)."""
+    return compsapi.usage()
 
 
 AI_SYNC_INTERVAL = timedelta(hours=24)
