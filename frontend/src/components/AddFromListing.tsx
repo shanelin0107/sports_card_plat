@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 
 import { api } from '@/lib/client-api';
+import { resizeForUpload } from '@/lib/images';
 import { money } from '@/lib/format';
 import type { Holding } from '@/lib/types';
 
@@ -40,6 +41,9 @@ export function AddFromListing({ listing, onClose }: { listing: SearchListing; o
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<Holding | null>(null);
+  const [photoMode, setPhotoMode] = useState<'listing' | 'own' | 'none'>('listing');
+  const [own, setOwn] = useState<{ content_type: string; data_base64: string; preview: string } | null>(null);
+  const [ownUrl, setOwnUrl] = useState('');
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -77,13 +81,21 @@ export function AddFromListing({ listing, onClose }: { listing: SearchListing; o
           purchase_date: f.get('purchase_date'),
           quantity: Number(f.get('quantity')),
           notes: f.get('notes') || null,
-          image_url: f.get('use_photo') === 'on' ? item?.image ?? listing.image : null,
+          image_url:
+            photoMode === 'listing' ? item?.image ?? listing.image : photoMode === 'own' && !own && ownUrl.trim() ? ownUrl.trim() : null,
         }),
       });
+      let saved = h;
+      if (photoMode === 'own' && own) {
+        saved = await api<Holding>(`/collection/items/${h.id}/photo`, {
+          method: 'PUT',
+          body: JSON.stringify({ content_type: own.content_type, data_base64: own.data_base64 }),
+        });
+      }
       // start pulling sold data for the new card in the background
       const g = h.grade_value ? `psa${h.grade_value}` : 'raw';
       api(`/market/sync/${h.card_id}?grade=${g}`, { method: 'POST' }).catch(() => {});
-      setDone(h);
+      setDone(saved);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -181,10 +193,61 @@ export function AddFromListing({ listing, onClose }: { listing: SearchListing; o
                   <label className="flex min-h-11 items-center gap-2">
                     <input type="checkbox" name="autograph" defaultChecked={c.autograph} className="h-4 w-4 accent-up" /> Auto
                   </label>
-                  <label className="flex min-h-11 items-center gap-2">
-                    <input type="checkbox" name="use_photo" defaultChecked className="h-4 w-4 accent-up" /> Use this listing’s photo
-                  </label>
                 </div>
+
+                <fieldset className="space-y-2 rounded-md border border-line p-3">
+                  <legend className="eyebrow px-1">Card photo</legend>
+                  <div className="flex flex-wrap gap-4 text-[13px]">
+                    {(
+                      [
+                        ['listing', 'This listing’s photo'],
+                        ['own', 'My own photo'],
+                        ['none', 'No photo'],
+                      ] as const
+                    ).map(([v, label]) => (
+                      <label key={v} className="flex min-h-11 items-center gap-2">
+                        <input type="radio" name="photo_mode" value={v} checked={photoMode === v} onChange={() => setPhotoMode(v)} className="h-4 w-4 accent-up" />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                  {photoMode === 'own' && (
+                    <div className="flex flex-wrap items-center gap-3">
+                      {own?.preview && (
+                        // eslint-disable-next-line @next/next/no-img-element -- local preview
+                        <img src={own.preview} alt="Your photo" className="h-[84px] w-[60px] rounded-[4px] border border-edge object-cover" />
+                      )}
+                      <label className="btn-ghost cursor-pointer">
+                        {own ? 'Choose another photo' : 'Upload photo'}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="sr-only"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            try {
+                              setOwn(await resizeForUpload(file));
+                            } catch {
+                              setErr('Could not read that image. Try a JPG or PNG.');
+                            }
+                          }}
+                        />
+                      </label>
+                      <label htmlFor="afl-ownurl" className="sr-only">
+                        Image URL
+                      </label>
+                      <input
+                        id="afl-ownurl"
+                        className="field min-w-[200px] flex-1"
+                        placeholder="…or paste an image URL"
+                        value={ownUrl}
+                        onChange={(e) => setOwnUrl(e.target.value)}
+                        disabled={Boolean(own)}
+                      />
+                    </div>
+                  )}
+                </fieldset>
 
                 <div className="border-t border-line pt-4">
                   <p className="eyebrow mb-2">Your copy</p>

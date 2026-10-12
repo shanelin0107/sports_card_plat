@@ -141,12 +141,22 @@ export function EbaySearch({ q, owned }: { q: string; owned: CardSearchResult[] 
               ))}
             </div>
           </div>
-          <p className="text-[12px] text-muted">
-            These are live listings (asking prices). Sold prices for a card appear on its page after you add it.
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-[12px] text-muted">
+              These are live listings (asking prices). Sold prices for a card appear on its page after you add it.
+            </p>
+            <Link href={`/collection?new=${encodeURIComponent(q)}`} className="btn-ghost text-[13px] text-ink">
+              Your exact card isn’t listed? Add it manually →
+            </Link>
+          </div>
 
           {shown.length === 0 ? (
-            <p className="text-muted">No listings match. Try fewer words (drop the serial number or grade).</p>
+            <div className="panel space-y-3 p-5">
+              <p className="text-muted">No listings match. Try fewer words (drop the serial number or grade) — or add the card yourself.</p>
+              <Link href={`/collection?new=${encodeURIComponent(q)}`} className="btn-primary text-[#06281A] hover:text-[#06281A]">
+                + Add “{q}” manually
+              </Link>
+            </div>
           ) : (
             <ul className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4">
               {shown.map((l) => (

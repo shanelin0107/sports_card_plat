@@ -17,6 +17,8 @@ const SETS: [string, string, string][] = [
   // [phrase, brand, set]
   ['national treasures', 'Panini', 'National Treasures'],
   ['prizm black', 'Panini', 'Prizm Black'],
+  ['prizm deca', 'Panini', 'Prizm Deca'],
+  ['prizm monopoly', 'Panini', 'Prizm Monopoly'],
   ['prizm draft picks', 'Panini', 'Prizm Draft Picks'],
   ['select black', 'Panini', 'Select Black'],
   ['topps chrome black', 'Topps', 'Chrome Black'],
@@ -74,6 +76,13 @@ export function guessCard(query: string): CardGuess {
   if (num) {
     g.card_number = num[1];
     q = q.replace(num[0], ' ');
+  } else {
+    // Insert / auto codes without "#": "DS-LIN", "RA-JL", "BCP-50"
+    const code = q.match(/\b([A-Z]{1,5}-[A-Z0-9]{1,6})\b/);
+    if (code) {
+      g.card_number = code[1];
+      q = q.replace(code[0], ' ');
+    }
   }
   q = q.replace(/\b(psa|bgs|sgc|cgc)\s*\d+(\.5)?\b/gi, ' ');
   if (/\b(rc|rookie)\b/i.test(q)) g.rookie = true;
