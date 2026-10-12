@@ -2,7 +2,7 @@
 
 import re
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -109,3 +109,20 @@ def create_card(body: CardCreate, db: Session = Depends(get_db)):
 
     db.commit()
     return {"card_id": card.id, "card_parallel_id": parallel.id, "title": card.title, "created": created}
+
+
+class CardImageIn(BaseModel):
+    image_url: str | None = Field(default=None, max_length=1000)
+
+
+@router.put("/cards/{card_id}/image")
+def set_card_image(card_id: int, body: CardImageIn, db: Session = Depends(get_db)):
+    """Set (or clear) the catalog image, e.g. from an eBay listing photo."""
+    card = db.get(Card, card_id)
+    if card is None:
+        raise HTTPException(status_code=404, detail="Card not found")
+    if body.image_url and not body.image_url.startswith("https://"):
+        raise HTTPException(status_code=422, detail="Image URL must be https")
+    card.default_image_url = body.image_url or None
+    db.commit()
+    return {"card_id": card_id, "default_image_url": card.default_image_url}

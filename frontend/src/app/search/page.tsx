@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 import { AiPricePanel } from '@/components/AiPricePanel';
 import { CardThumb } from '@/components/CardThumb';
+import { EbayMarketPanel } from '@/components/EbayMarketPanel';
 import { ErrorState } from '@/components/ErrorState';
 import { money } from '@/lib/format';
 import { cardImage } from '@/lib/images';
@@ -52,6 +53,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
                 + Create this card
               </Link>
             </div>
+            <EbayMarketPanel query={q} />
             <AiPricePanel query={q} />
           </>
         ) : (

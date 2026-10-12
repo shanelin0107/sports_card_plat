@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     ai_max_searches: int = 8
     ai_max_fetches: int = 6
 
+    # eBay developer keyset (Production App ID + Cert ID). Empty = eBay features off.
+    ebay_client_id: str = ""
+    ebay_client_secret: str = ""
+
     ingestion_feed_path: str = str(PROJECT_ROOT / "seed" / "ebay_sample_feed.json")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")

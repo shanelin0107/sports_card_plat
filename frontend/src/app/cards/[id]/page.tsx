@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 
 import { AiPricePanel } from '@/components/AiPricePanel';
 import { CardThumb } from '@/components/CardThumb';
+import { EbayMarketPanel } from '@/components/EbayMarketPanel';
 import { ErrorState } from '@/components/ErrorState';
 import { Kpi } from '@/components/Kpi';
 import { PriceChart } from '@/components/PriceChart';
@@ -150,6 +151,8 @@ export default async function CardDetailPage({
           </div>
         </section>
       </div>
+
+      <EbayMarketPanel cardId={m.id} grade={activeGrade} player={m.player} />
 
       <AiPricePanel cardId={m.id} grade={activeGrade} />
 

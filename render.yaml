@@ -20,5 +20,9 @@ services:
         value: "true"
       - key: ANTHROPIC_API_KEY # optional: enables AI price research
         sync: false
+      - key: EBAY_CLIENT_ID # eBay Production App ID (optional)
+        sync: false
+      - key: EBAY_CLIENT_SECRET # eBay Production Cert ID (optional)
+        sync: false
       - key: CORS_ORIGINS # browsers go through the Next.js proxy, so this can stay empty
         value: ""

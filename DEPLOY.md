@@ -54,3 +54,9 @@ checklists), identifies the exact card, and lists sold and live prices with sour
 Prices whose source page wasn't actually retrieved are discarded, and nothing becomes a comp
 until you click "Save as comp" on an exact match. Cost is roughly $0.05–0.30 per lookup
 (web searches are $10 per 1,000 plus tokens). Change the model with `AI_MODEL`.
+
+## eBay market data (optional)
+Set `EBAY_CLIENT_ID` (Production App ID) and `EBAY_CLIENT_SECRET` (Production Cert ID) from
+developer.ebay.com → Application Keys. Every keyset can read live listings (Browse API); sold
+history needs eBay's Marketplace Insights approval, which the app detects automatically
+(`GET /api/v1/market/ebay/status`).
