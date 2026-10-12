@@ -3,11 +3,20 @@
 import { useState } from 'react';
 
 import { api } from '@/lib/client-api';
+import type { CardGuess } from '@/lib/guess-card';
 
 type Created = { card_id: number; card_parallel_id: number; title: string; created: boolean };
 
 /** Adds a card to the catalog (player / brand / set are created as needed). */
-export function NewCardForm({ onCreated, onCancel }: { onCreated: (c: Created) => void; onCancel: () => void }) {
+export function NewCardForm({
+  onCreated,
+  onCancel,
+  defaults = {},
+}: {
+  onCreated: (c: Created) => void;
+  onCancel: () => void;
+  defaults?: CardGuess;
+}) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -44,13 +53,14 @@ export function NewCardForm({ onCreated, onCancel }: { onCreated: (c: Created) =
       <label htmlFor={`nc-${name}`} className="eyebrow">
         {label}
       </label>
-      <input id={`nc-${name}`} name={name} className="field" required {...props} />
+      <input id={`nc-${name}`} name={name} className="field" required defaultValue={(defaults as Record<string, string | undefined>)[name]} {...props} />
     </div>
   );
 
   return (
     <form onSubmit={submit} className="space-y-3 rounded-md border border-line bg-base/60 p-4">
       <p className="text-[13px] font-bold">New catalog card</p>
+      {Object.keys(defaults).length > 0 && <p className="text-[12px] text-muted">Pre-filled from your search — check each field before saving.</p>}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {field('player', 'Player', { placeholder: 'Julio Rodriguez' })}
         {field('year', 'Year', { type: 'number', min: 1880, max: 2100, placeholder: '2023' })}
@@ -62,7 +72,7 @@ export function NewCardForm({ onCreated, onCancel }: { onCreated: (c: Created) =
           <label htmlFor="nc-sport" className="eyebrow">
             Sport
           </label>
-          <select id="nc-sport" name="sport" className="field" defaultValue="Baseball">
+          <select id="nc-sport" name="sport" className="field" defaultValue={defaults.sport ?? 'Baseball'}>
             <option>Baseball</option>
             <option>Basketball</option>
             <option>Football</option>
@@ -72,7 +82,7 @@ export function NewCardForm({ onCreated, onCancel }: { onCreated: (c: Created) =
         </div>
         <div className="flex items-end gap-5 pb-2 text-[13px]">
           <label className="flex min-h-11 items-center gap-2">
-            <input type="checkbox" name="rookie" className="h-4 w-4 accent-up" /> Rookie
+            <input type="checkbox" name="rookie" className="h-4 w-4 accent-up" defaultChecked={defaults.rookie} /> Rookie
           </label>
           <label className="flex min-h-11 items-center gap-2">
             <input type="checkbox" name="autograph" className="h-4 w-4 accent-up" /> Auto

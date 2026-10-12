@@ -5,6 +5,7 @@ import { useState } from 'react';
 
 import { api } from '@/lib/client-api';
 import { money, pct, signedMoney, tone } from '@/lib/format';
+import { guessCard } from '@/lib/guess-card';
 import { holdingImage, resizeForUpload } from '@/lib/images';
 import type { CardSearchResult, Holding } from '@/lib/types';
 
@@ -55,9 +56,9 @@ function fromHolding(h: Holding): Draft {
   };
 }
 
-export function CollectionManager({ initial, startAdding }: { initial: Holding[]; startAdding: boolean }) {
+export function CollectionManager({ initial, startAdding, newCardQuery }: { initial: Holding[]; startAdding: boolean; newCardQuery?: string }) {
   const [items, setItems] = useState(initial);
-  const [editing, setEditing] = useState<number | 'new' | null>(startAdding ? 'new' : null);
+  const [editing, setEditing] = useState<number | 'new' | null>(startAdding || newCardQuery ? 'new' : null);
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -98,7 +99,7 @@ export function CollectionManager({ initial, startAdding }: { initial: Holding[]
         )}
       </div>
 
-      {editing === 'new' && <HoldingForm draft={blank()} onSaved={(h) => saved(h, true)} onCancel={() => setEditing(null)} />}
+      {editing === 'new' && <HoldingForm draft={blank()} newCardQuery={newCardQuery} onSaved={(h) => saved(h, true)} onCancel={() => setEditing(null)} />}
       {error && <p className="text-[13px] text-down">{error}</p>}
 
       <section className="panel" aria-label="All holdings">
@@ -193,16 +194,19 @@ export function CollectionManager({ initial, startAdding }: { initial: Holding[]
 function HoldingForm({
   draft: initial,
   itemId,
+  newCardQuery,
   onSaved,
   onCancel,
 }: {
   draft: Draft;
   itemId?: number;
+  newCardQuery?: string;
   onSaved: (h: Holding) => void;
   onCancel: () => void;
 }) {
   const [d, setD] = useState<Draft>(initial);
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(Boolean(newCardQuery));
+  const guess = newCardQuery ? guessCard(newCardQuery) : {};
   const [photo, setPhoto] = useState<{ content_type: string; data_base64: string; preview: string } | null>(null);
   const [removePhoto, setRemovePhoto] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -286,15 +290,16 @@ function HoldingForm({
         </div>
       ) : creating ? (
         <NewCardForm
+          defaults={guess}
           onCancel={() => setCreating(false)}
           onCreated={(c) => {
-            setD((x) => ({ ...x, card_id: c.card_id, card_title: c.title, card_parallel_id: c.card_parallel_id }));
+            setD((x) => ({ ...x, card_id: c.card_id, card_title: c.title, card_parallel_id: c.card_parallel_id, player: guess.player ?? x.player }));
             setCreating(false);
           }}
         />
       ) : (
         <div className="space-y-2">
-          <CardPicker onPick={pick} />
+          <CardPicker onPick={pick} initialQuery={newCardQuery ?? ''} />
           <button type="button" className="text-[13px] text-link hover:text-ink" onClick={() => setCreating(true)}>
             Card not in the catalog? Create it →
           </button>

@@ -38,6 +38,17 @@ def _escape_like(token: str) -> str:
     return token.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+def search_tokens(q: str) -> list[str]:
+    """'2024-25 Prizm #12' -> ['2024', 'prizm', '12'].
+
+    Basketball/hockey seasons are written "2024-25" but stored as the start year.
+    """
+    import re
+
+    q = re.sub(r"\b((?:19|20)\d{2})\s*[-/]\s*\d{2,4}\b", r"\1", q.lower())
+    return [t for t in re.split(r"[\s#,]+", q) if t]
+
+
 def _search_blob():
     # Everything a collector might type: title, normalized text, brand, set, player, card #.
     return func.lower(
@@ -100,7 +111,7 @@ def search_cards(
     )
     blob = _search_blob()
     # Every token must appear somewhere ("2023 topps ohtani psa 10" -> 5 AND-ed tokens).
-    for token in q.lower().replace("#", " ").split():
+    for token in search_tokens(q):
         stmt = stmt.where(blob.like(f"%{_escape_like(token)}%", escape="\\"))
     if year:
         stmt = stmt.where(Card.year == year)

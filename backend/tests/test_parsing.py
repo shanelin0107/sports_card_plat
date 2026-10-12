@@ -29,3 +29,11 @@ def test_money_and_dates():
 def test_phrase_boundaries():
     assert contains_phrase("2023 topps chrome ohtani", "Topps")
     assert not contains_phrase("toppsy", "Topps")
+
+
+def test_search_tokens_handle_seasons_and_numbers():
+    from app.api.v1.cards import search_tokens
+
+    assert search_tokens("2024-25 prizm black Damian Lillard") == ["2024", "prizm", "black", "damian", "lillard"]
+    assert search_tokens("topps chrome #1") == ["topps", "chrome", "1"]
+    assert search_tokens("1996/97 topps") == ["1996", "topps"]
