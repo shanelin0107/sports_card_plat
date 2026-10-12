@@ -18,5 +18,7 @@ services:
         generateValue: true
       - key: SEED_DEMO_DATA # set to "false" if you don't want the demo cards in a fresh DB
         value: "true"
+      - key: ANTHROPIC_API_KEY # optional: enables AI price research
+        sync: false
       - key: CORS_ORIGINS # browsers go through the Next.js proxy, so this can stay empty
         value: ""

@@ -261,3 +261,22 @@ CREATE TABLE IF NOT EXISTS collection_item_photo (
 -- The original seed used placeholder URLs that never resolved; clear them so the UI
 -- shows its own placeholder instead of a broken image.
 UPDATE card SET default_image_url = NULL WHERE default_image_url LIKE 'https://example.com/%';
+
+-- v0.4: AI price research jobs (Claude + web search). Results are suggestions only;
+-- nothing becomes a comp until the owner confirms it.
+CREATE TABLE IF NOT EXISTS ai_price_research (
+  id SERIAL PRIMARY KEY,
+  card_id INT REFERENCES card(id) ON DELETE SET NULL,
+  query TEXT NOT NULL,
+  grade VARCHAR(20),
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  model VARCHAR(80),
+  result_json JSONB,
+  error_message TEXT,
+  searches_used INT NOT NULL DEFAULT 0,
+  input_tokens INT NOT NULL DEFAULT 0,
+  output_tokens INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  completed_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_ai_price_research_card ON ai_price_research(card_id, created_at DESC);

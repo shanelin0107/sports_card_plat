@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     auto_init_db: bool = True
     seed_demo_data: bool = True
 
+    # AI price research (Claude + web search). Empty key = feature disabled.
+    anthropic_api_key: str = ""
+    ai_model: str = "claude-sonnet-5-5"
+    ai_max_searches: int = 8
+    ai_max_fetches: int = 6
+
     ingestion_feed_path: str = str(PROJECT_ROOT / "seed" / "ebay_sample_feed.json")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")

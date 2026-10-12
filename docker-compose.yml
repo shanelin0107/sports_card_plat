@@ -29,6 +29,8 @@ services:
       APP_ENV: ${APP_ENV:-dev}
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-sports_cards}
       API_KEY: ${API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-claude-sonnet-5-5}
       CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
     ports:
       - "8000:8000"

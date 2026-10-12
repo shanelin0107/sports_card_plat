@@ -46,3 +46,11 @@ Use Render's Cron Job, GitHub Actions, or any cron service to call:
 curl -X POST -H "X-API-Key: $API_KEY" https://<your-api>.onrender.com/api/v1/internal/ingestion/run?mode=daily
 ```
 The daily-change KPI needs no cron: the dashboard records a valuation snapshot each day it is opened.
+
+## AI price check (optional)
+Set `ANTHROPIC_API_KEY` on Render (and in `.env` locally). The card page then shows an
+"AI price check" panel: Claude searches the web (eBay sold listings, 130point, price guides,
+checklists), identifies the exact card, and lists sold and live prices with source links.
+Prices whose source page wasn't actually retrieved are discarded, and nothing becomes a comp
+until you click "Save as comp" on an exact match. Cost is roughly $0.05–0.30 per lookup
+(web searches are $10 per 1,000 plus tokens). Change the model with `AI_MODEL`.

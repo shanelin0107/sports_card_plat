@@ -1,5 +1,6 @@
 import Link from 'next/link';
 
+import { AiPricePanel } from '@/components/AiPricePanel';
 import { CardThumb } from '@/components/CardThumb';
 import { ErrorState } from '@/components/ErrorState';
 import { money } from '@/lib/format';
@@ -39,16 +40,23 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
       {!results ? (
         <ErrorState />
       ) : results.length === 0 ? (
-        <div className="panel space-y-3 p-5">
-          <p className="font-bold">“{q}” isn’t in your catalog yet.</p>
-          <p className="text-[13px] text-muted">
-            Search looks through the cards you’ve added — it isn’t connected to an outside card database. Add this card once and it will show up here,
-            on your dashboard, and in sales matching.
-          </p>
-          <Link href={`/collection?new=${encodeURIComponent(q)}`} className="btn-primary text-[#06281A] hover:text-[#06281A]">
-            + Create this card
-          </Link>
-        </div>
+        q ? (
+          <>
+            <div className="panel space-y-3 p-5">
+              <p className="font-bold">“{q}” isn’t in your catalog yet.</p>
+              <p className="text-[13px] text-muted">
+                Search looks through the cards you’ve added — it isn’t connected to an outside card database. Ask AI for prices below, or add the
+                card to your catalog so it shows up here, on your dashboard, and in sales matching.
+              </p>
+              <Link href={`/collection?new=${encodeURIComponent(q)}`} className="btn-primary text-[#06281A] hover:text-[#06281A]">
+                + Create this card
+              </Link>
+            </div>
+            <AiPricePanel query={q} />
+          </>
+        ) : (
+          <p className="text-muted">Your catalog is empty. Add a card from the Collection page.</p>
+        )
       ) : (
         <section className="panel" aria-label="Search results">
           <div className="overflow-x-auto">

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
+import { AiPricePanel } from '@/components/AiPricePanel';
 import { CardThumb } from '@/components/CardThumb';
 import { ErrorState } from '@/components/ErrorState';
 import { Kpi } from '@/components/Kpi';
@@ -149,6 +150,8 @@ export default async function CardDetailPage({
           </div>
         </section>
       </div>
+
+      <AiPricePanel cardId={m.id} grade={activeGrade} />
 
       <section className="panel" aria-label="Sold comps">
         <div className="panel-head">

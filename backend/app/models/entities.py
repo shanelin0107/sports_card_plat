@@ -262,3 +262,21 @@ class IngestionIssue(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="open", server_default="open")
     resolved_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     resolution_card_id: Mapped[int | None] = mapped_column(ForeignKey("card.id"), nullable=True)
+
+
+class AiPriceResearch(Base):
+    __tablename__ = "ai_price_research"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    card_id: Mapped[int | None] = mapped_column(ForeignKey("card.id", ondelete="SET NULL"), nullable=True, index=True)
+    query: Mapped[str] = mapped_column(Text, nullable=False)
+    grade: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    model: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    result_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    searches_used: Mapped[int] = mapped_column(Integer, default=0)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
