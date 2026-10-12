@@ -13,6 +13,7 @@ from app.models.entities import (
     CardParallel,
     CardSet,
     CollectionItem,
+    CollectionItemPhoto,
     GradeCompany,
     Player,
     ValuationSnapshot,
@@ -55,6 +56,14 @@ def load_holdings(db: Session, item_ids: list[int] | None = None) -> list[Collec
 
     names = grade_company_names(db)
     engine = ValuationEngine(db, {item.card_id for item, *_ in rows})
+    photo_versions = {
+        iid: str(int(ts.timestamp() * 1000))
+        for iid, ts in db.execute(
+            select(CollectionItemPhoto.collection_item_id, CollectionItemPhoto.updated_at).where(
+                CollectionItemPhoto.collection_item_id.in_([item.id for item, *_ in rows])
+            )
+        ).all()
+    }
     out: list[CollectionItemOut] = []
     for item, card, brand, card_set, player, parallel in rows:
         gkey = grade_key_for_item(item.grade_company_id, item.grade_value, item.is_graded)
@@ -90,6 +99,8 @@ def load_holdings(db: Session, item_ids: list[int] | None = None) -> list[Collec
                 card_number=card.card_number,
                 parallel=parallel,
                 rookie_flag=bool(card.rookie_flag),
+                card_image_url=card.default_image_url,
+                photo_version=photo_versions.get(item.id),
                 grade_label=grade_label(gkey, names),
                 estimated_value=est,
                 estimated_unit_price=unit,

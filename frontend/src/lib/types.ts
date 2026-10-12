@@ -18,6 +18,9 @@ export type Holding = {
   card_number: string | null;
   parallel: string | null;
   rookie_flag: boolean;
+  card_image_url: string | null;
+  photo_version: string | null;
+  image_url: string | null;
   grade_label: string;
   estimated_value: number | null;
   estimated_unit_price: number | null;
@@ -123,6 +126,9 @@ export type CardSearchResult = {
   card_set: string;
   player: string;
   rookie_flag: boolean;
+  default_image_url: string | null;
+  photo_item_id: number | null;
+  photo_version: string | null;
   valuation_preview: number | null;
   comp_count: number;
 };
@@ -156,6 +162,9 @@ export type CardDetail = {
     rookie_flag: boolean;
     autograph_flag: boolean;
     patch_flag: boolean;
+    default_image_url: string | null;
+    photo_item_id: number | null;
+    photo_version: string | null;
   };
   valuation: Valuation;
   stats: { count: number; average_price: number | null; median_price: number | null; window: string };

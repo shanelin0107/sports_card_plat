@@ -84,3 +84,29 @@ def test_api_key_guard(client, monkeypatch):
     monkeypatch.setattr(settings, "api_key", "secret")
     assert client.get("/api/v1/dashboard/summary").status_code == 401
     assert client.get("/api/v1/dashboard/summary", headers={"X-API-Key": "secret"}).status_code == 200
+
+
+def test_holding_photo_roundtrip(client):
+    import base64
+
+    png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    )
+    item_id = client.get("/api/v1/collection/items").json()[0]["id"]
+    assert client.get(f"/api/v1/collection/items/{item_id}/photo").status_code == 404
+
+    bad = client.put(f"/api/v1/collection/items/{item_id}/photo", json={"content_type": "image/jpeg", "data_base64": base64.b64encode(png).decode()})
+    assert bad.status_code == 422  # PNG bytes labelled as JPEG
+
+    r = client.put(f"/api/v1/collection/items/{item_id}/photo", json={"content_type": "image/png", "data_base64": base64.b64encode(png).decode()})
+    assert r.status_code == 200 and r.json()["photo_version"]
+    img = client.get(f"/api/v1/collection/items/{item_id}/photo")
+    assert img.status_code == 200 and img.headers["content-type"] == "image/png" and img.content == png
+
+    card_id = r.json()["card_id"]
+    assert client.get(f"/api/v1/cards/{card_id}").json()["metadata"]["photo_item_id"] == item_id
+
+    assert client.delete(f"/api/v1/collection/items/{item_id}/photo").json()["photo_version"] is None
+    # deleting the holding also removes its photo (FK cascade)
+    client.put(f"/api/v1/collection/items/{item_id}/photo", json={"content_type": "image/png", "data_base64": base64.b64encode(png).decode()})
+    assert client.delete(f"/api/v1/collection/items/{item_id}").status_code == 200

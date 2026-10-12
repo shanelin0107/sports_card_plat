@@ -18,8 +18,8 @@ ON CONFLICT DO NOTHING;
 
 INSERT INTO card (id, sport_id, year, brand_id, set_id, player_id, card_number, title, slug, search_text_normalized, default_image_url, rookie_flag, autograph_flag, patch_flag)
 VALUES
-  (1, 1, 2023, 1, 1, 1, '1', '2023 Topps Chrome Shohei Ohtani #1', '2023-topps-chrome-shohei-ohtani-1', '2023 topps chrome shohei ohtani 1 psa 10 raw', 'https://example.com/ohtani.jpg', false, false, false),
-  (2, 2, 2023, 2, 2, 2, '136', '2023 Panini Prizm Victor Wembanyama #136 RC', '2023-panini-prizm-victor-wembanyama-136', '2023 panini prizm victor wembanyama 136 rc psa 10 raw silver', 'https://example.com/wemby.jpg', true, false, false)
+  (1, 1, 2023, 1, 1, 1, '1', '2023 Topps Chrome Shohei Ohtani #1', '2023-topps-chrome-shohei-ohtani-1', '2023 topps chrome shohei ohtani 1 psa 10 raw', NULL, false, false, false),
+  (2, 2, 2023, 2, 2, 2, '136', '2023 Panini Prizm Victor Wembanyama #136 RC', '2023-panini-prizm-victor-wembanyama-136', '2023 panini prizm victor wembanyama 136 rc psa 10 raw silver', NULL, true, false, false)
 ON CONFLICT DO NOTHING;
 
 INSERT INTO card_parallel (id, card_id, parallel_name, variation_name, is_short_print)

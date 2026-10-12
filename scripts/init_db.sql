@@ -248,3 +248,16 @@ BEGIN
     EXECUTE format('SELECT setval(%L, COALESCE((SELECT MAX(id) FROM %I), 0) + 1, false)', r.seq, r.tbl);
   END LOOP;
 END $$;
+
+-- v0.3: owner photos for holdings (stored in Postgres so they survive redeploys on
+-- hosts with ephemeral disks, e.g. Render).
+CREATE TABLE IF NOT EXISTS collection_item_photo (
+  collection_item_id INT PRIMARY KEY REFERENCES collection_item(id) ON DELETE CASCADE,
+  content_type VARCHAR(50) NOT NULL,
+  data BYTEA NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- The original seed used placeholder URLs that never resolved; clear them so the UI
+-- shows its own placeholder instead of a broken image.
+UPDATE card SET default_image_url = NULL WHERE default_image_url LIKE 'https://example.com/%';

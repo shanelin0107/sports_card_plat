@@ -42,6 +42,8 @@ class CollectionItemOut(CollectionItemCreate):
     card_number: str | None = None
     parallel: str | None = None
     rookie_flag: bool = False
+    card_image_url: str | None = None
+    photo_version: str | None = None  # set when the owner uploaded a photo for this holding
     grade_label: str = "Raw"
     # Valuation
     estimated_value: float | None = None
@@ -52,3 +54,8 @@ class CollectionItemOut(CollectionItemCreate):
     valuation_method: str | None = None
     exact_comp_count: int = 0
     spark: list[float] = []
+
+
+class PhotoUpload(BaseModel):
+    content_type: str = Field(pattern=r"^image/(jpeg|png|webp)$")
+    data_base64: str = Field(max_length=4_000_000)  # ~3 MB decoded

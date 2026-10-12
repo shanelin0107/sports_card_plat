@@ -1,7 +1,9 @@
 import Link from 'next/link';
 
+import { CardThumb } from '@/components/CardThumb';
 import { ErrorState } from '@/components/ErrorState';
 import { money } from '@/lib/format';
+import { cardImage } from '@/lib/images';
 import { apiTry } from '@/lib/server-api';
 import type { CardSearchResult } from '@/lib/types';
 
@@ -46,10 +48,13 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
                 {results.map((r) => (
                   <tr key={r.id} className="border-t border-line hover:bg-raised/50">
                     <td className="td pl-5 font-sans">
-                      <Link href={`/cards/${r.id}`} className="flex min-h-11 flex-col justify-center text-ink hover:text-link">
-                        <b>{r.player}</b>
-                        <span className="text-[12px] text-muted">
-                          {r.year} #{r.card_number} {r.rookie_flag ? '· RC' : ''}
+                      <Link href={`/cards/${r.id}`} className="flex min-h-11 items-center gap-3 text-ink hover:text-link">
+                        <CardThumb src={cardImage(r)} player={r.player} />
+                        <span className="flex flex-col">
+                          <b>{r.player}</b>
+                          <span className="text-[12px] text-muted">
+                            {r.year} #{r.card_number} {r.rookie_flag ? '· RC' : ''}
+                          </span>
                         </span>
                       </Link>
                     </td>

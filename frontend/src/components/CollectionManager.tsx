@@ -5,9 +5,11 @@ import { useState } from 'react';
 
 import { api } from '@/lib/client-api';
 import { money, pct, signedMoney, tone } from '@/lib/format';
+import { holdingImage, resizeForUpload } from '@/lib/images';
 import type { CardSearchResult, Holding } from '@/lib/types';
 
 import { CardPicker } from './CardPicker';
+import { CardThumb } from './CardThumb';
 import { NewCardForm } from './NewCardForm';
 
 const GRADES = ['raw', '10', '9', '8', '7', '6', '5', '4', '3', '2', '1'];
@@ -22,12 +24,19 @@ type Draft = {
   purchase_date: string;
   quantity: string;
   notes: string;
+  image_url: string;
+  current_photo: string | null; // what the thumbnail shows today
+  player: string | null;
 };
 
-const today = () => new Date().toISOString().slice(0, 10);
+// Local calendar date (toISOString() is UTC, which is already "tomorrow" on US evenings).
+const today = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
 function blank(): Draft {
-  return { card_id: null, card_title: '', card_parallel_id: null, grade: 'raw', purchase_price: '', purchase_date: today(), quantity: '1', notes: '' };
+  return { card_id: null, card_title: '', card_parallel_id: null, grade: 'raw', purchase_price: '', purchase_date: today(), quantity: '1', notes: '', image_url: '', current_photo: null, player: null };
 }
 
 function fromHolding(h: Holding): Draft {
@@ -40,6 +49,9 @@ function fromHolding(h: Holding): Draft {
     purchase_date: h.purchase_date,
     quantity: String(h.quantity),
     notes: h.notes ?? '',
+    image_url: h.image_url ?? '',
+    current_photo: holdingImage(h),
+    player: h.player,
   };
 }
 
@@ -120,16 +132,21 @@ export function CollectionManager({ initial, startAdding }: { initial: Holding[]
                   ) : (
                     <tr key={h.id} className="border-t border-line">
                       <td className="td pl-5 font-sans">
-                        <Link href={`/cards/${h.card_id}?grade=${h.grade_value ? `psa${h.grade_value}` : 'raw'}`} className="text-ink hover:text-link">
-                          <b>{h.player}</b>
-                        </Link>
-                        {h.rookie_flag && <span className="badge ml-1.5 bg-warn/15 text-warn">RC</span>}
-                        <br />
-                        <span className="text-[12px] text-muted">
-                          {h.year} {h.card_set} #{h.card_number}
-                          {h.parallel && h.parallel !== 'Base' ? ` · ${h.parallel}` : ''}
-                        </span>
-                        {h.notes && <span className="block text-[12px] italic text-muted">{h.notes}</span>}
+                        <div className="flex items-center gap-3">
+                          <CardThumb src={holdingImage(h)} player={h.player} />
+                          <div>
+                            <Link href={`/cards/${h.card_id}?grade=${h.grade_value ? `psa${h.grade_value}` : 'raw'}`} className="text-ink hover:text-link">
+                              <b>{h.player}</b>
+                            </Link>
+                            {h.rookie_flag && <span className="badge ml-1.5 bg-warn/15 text-warn">RC</span>}
+                            <br />
+                            <span className="text-[12px] text-muted">
+                              {h.year} {h.card_set} #{h.card_number}
+                              {h.parallel && h.parallel !== 'Base' ? ` · ${h.parallel}` : ''}
+                            </span>
+                            {h.notes && <span className="block text-[12px] italic text-muted">{h.notes}</span>}
+                          </div>
+                        </div>
                       </td>
                       <td className="td">{h.grade_label}</td>
                       <td className="td text-right">{h.quantity}</td>
@@ -186,6 +203,8 @@ function HoldingForm({
 }) {
   const [d, setD] = useState<Draft>(initial);
   const [creating, setCreating] = useState(false);
+  const [photo, setPhoto] = useState<{ content_type: string; data_base64: string; preview: string } | null>(null);
+  const [removePhoto, setRemovePhoto] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const set = (k: keyof Draft, v: string | number | null) => setD((x) => ({ ...x, [k]: v }));
@@ -210,12 +229,21 @@ function HoldingForm({
       purchase_date: d.purchase_date,
       quantity: Number(d.quantity),
       notes: d.notes || null,
+      image_url: d.image_url.trim() || null,
     };
     try {
-      const h = await api<Holding>(itemId ? `/collection/items/${itemId}` : '/collection/items', {
+      let h = await api<Holding>(itemId ? `/collection/items/${itemId}` : '/collection/items', {
         method: itemId ? 'PUT' : 'POST',
         body: JSON.stringify(body),
       });
+      if (photo) {
+        h = await api<Holding>(`/collection/items/${h.id}/photo`, {
+          method: 'PUT',
+          body: JSON.stringify({ content_type: photo.content_type, data_base64: photo.data_base64 }),
+        });
+      } else if (removePhoto && itemId) {
+        h = await api<Holding>(`/collection/items/${h.id}/photo`, { method: 'DELETE' });
+      }
       onSaved(h);
     } catch (e) {
       setErr((e as Error).message);
@@ -225,8 +253,21 @@ function HoldingForm({
   }
 
   function pick(c: CardSearchResult) {
-    setD((x) => ({ ...x, card_id: c.id, card_title: c.title, card_parallel_id: null }));
+    setD((x) => ({ ...x, card_id: c.id, card_title: c.title, card_parallel_id: null, player: c.player }));
   }
+
+  async function choosePhoto(file: File | undefined) {
+    if (!file) return;
+    setErr(null);
+    try {
+      setPhoto(await resizeForUpload(file));
+      setRemovePhoto(false);
+    } catch {
+      setErr('Could not read that image. Try a JPG or PNG.');
+    }
+  }
+
+  const shownPhoto = photo?.preview ?? (removePhoto ? null : d.current_photo) ?? (d.image_url.trim() || null);
 
   return (
     <div className="panel space-y-4 p-5">
@@ -302,6 +343,41 @@ function HoldingForm({
             <input id="hf-qty" className="field" type="number" min="1" required value={d.quantity} onChange={(e) => set('quantity', e.target.value)} />
           </div>
         </div>
+        <fieldset className="flex flex-wrap items-center gap-4 rounded-md border border-line p-3">
+          <legend className="eyebrow px-1">Card photo</legend>
+          <CardThumb src={shownPhoto} player={d.player} size="md" alt="Selected card photo" />
+          <div className="flex min-w-[220px] flex-1 flex-col gap-2">
+            <div className="flex flex-wrap gap-2">
+              <label className="btn-ghost cursor-pointer">
+                {shownPhoto ? 'Replace photo' : 'Upload photo'}
+                <input type="file" accept="image/*" className="sr-only" onChange={(e) => choosePhoto(e.target.files?.[0])} />
+              </label>
+              {(photo || (itemId && d.current_photo && !removePhoto && !d.image_url)) && (
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  onClick={() => {
+                    setPhoto(null);
+                    setRemovePhoto(true);
+                  }}
+                >
+                  Remove photo
+                </button>
+              )}
+            </div>
+            <label htmlFor="hf-imgurl" className="sr-only">
+              Image URL
+            </label>
+            <input
+              id="hf-imgurl"
+              className="field"
+              placeholder="…or paste an image URL"
+              value={d.image_url}
+              onChange={(e) => set('image_url', e.target.value)}
+            />
+            <p className="text-[12px] text-muted">On a phone, Upload opens the camera. Photos are resized before upload.</p>
+          </div>
+        </fieldset>
         <div className="space-y-1">
           <label htmlFor="hf-notes" className="eyebrow">
             Notes

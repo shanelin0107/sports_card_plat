@@ -5,8 +5,10 @@ import { useEffect, useState } from 'react';
 
 import { api } from '@/lib/client-api';
 import { confidenceLabel, money, pct, signedMoney, tone } from '@/lib/format';
+import { holdingImage } from '@/lib/images';
 import type { CardDetail, Holding, SalesHistory } from '@/lib/types';
 
+import { CardThumb } from './CardThumb';
 import { PriceChart } from './PriceChart';
 import { Sparkline } from './Sparkline';
 
@@ -58,15 +60,18 @@ export function HoldingsBoard({ holdings }: { holdings: Holding[] }) {
                           type="button"
                           onClick={() => setSelectedId(h.id)}
                           aria-pressed={active}
-                          className="min-h-11 text-left"
+                          className="flex min-h-11 items-center gap-3 text-left"
                         >
-                          <b className="text-ink">{h.player}</b>{' '}
-                          {h.rookie_flag && <span className="badge bg-warn/15 text-warn">RC</span>}
-                          <br />
-                          <span className="text-[12px] text-muted">
-                            {h.year} {h.card_set} #{h.card_number}
-                            {h.parallel && h.parallel !== 'Base' ? ` · ${h.parallel}` : ''}
-                            {h.quantity > 1 ? ` · ×${h.quantity}` : ''}
+                          <CardThumb src={holdingImage(h)} player={h.player} />
+                          <span>
+                            <b className="text-ink">{h.player}</b>{' '}
+                            {h.rookie_flag && <span className="badge bg-warn/15 text-warn">RC</span>}
+                            <br />
+                            <span className="text-[12px] text-muted">
+                              {h.year} {h.card_set} #{h.card_number}
+                              {h.parallel && h.parallel !== 'Base' ? ` · ${h.parallel}` : ''}
+                              {h.quantity > 1 ? ` · ×${h.quantity}` : ''}
+                            </span>
                           </span>
                         </button>
                       </td>
@@ -116,12 +121,15 @@ function SelectedCard({ holding }: { holding: Holding }) {
   const conf = confidenceLabel(v?.confidence_score);
   return (
     <section aria-label="Selected card" className="panel flex min-w-0 flex-[1_1_380px] flex-col gap-3.5 p-[18px]">
-      <div>
-        <p className="eyebrow">Valuation · {v?.window_used ?? '90d'} window</p>
-        <h2 className="mt-1 text-[18px] font-bold">
-          {holding.player?.split(' ').slice(-1)[0]} {holding.card_set?.replace(/^(Topps|Panini) /, '')}
-          {holding.parallel && holding.parallel !== 'Base' ? ` ${holding.parallel}` : ''} {holding.grade_label}
-        </h2>
+      <div className="flex items-start gap-3.5">
+        <CardThumb src={holdingImage(holding)} player={holding.player} size="md" />
+        <div>
+          <p className="eyebrow">Valuation · {v?.window_used ?? '90d'} window</p>
+          <h2 className="mt-1 text-[18px] font-bold">
+            {holding.player?.split(' ').slice(-1)[0]} {holding.card_set?.replace(/^(Topps|Panini) /, '')}
+            {holding.parallel && holding.parallel !== 'Base' ? ` ${holding.parallel}` : ''} {holding.grade_label}
+          </h2>
+        </div>
       </div>
       {error && <p className="text-[13px] text-warn">Couldn’t load details: {error}</p>}
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">

@@ -13,6 +13,8 @@ class CardSearchResultOut(BaseModel):
     player: str
     rookie_flag: bool = False
     default_image_url: str | None
+    photo_item_id: int | None = None
+    photo_version: str | None = None
     valuation_preview: float | None
     comp_count: int = 0
 
@@ -31,6 +33,8 @@ class CardMetadataOut(BaseModel):
     autograph_flag: bool
     patch_flag: bool
     default_image_url: str | None
+    photo_item_id: int | None = None
+    photo_version: str | None = None
 
 
 class CardStatsOut(BaseModel):

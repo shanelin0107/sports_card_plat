@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models.entities import Brand, Card, CardSet, Player, SaleComp, Sport
+from app.models.entities import Brand, Card, CardSet, CollectionItem, CollectionItemPhoto, Player, SaleComp, Sport
 from app.schemas.cards import (
     CardDetailOut,
     CardMetadataOut,
@@ -63,6 +63,22 @@ def _valuation_out(card_id: int, v: dict, label: str) -> ValuationOut:
     )
 
 
+def _card_photos(db: Session, card_ids: set[int]) -> dict[int, tuple[int, str]]:
+    """Most recent owner photo per card -> (collection_item_id, version)."""
+    if not card_ids:
+        return {}
+    rows = db.execute(
+        select(CollectionItem.card_id, CollectionItemPhoto.collection_item_id, CollectionItemPhoto.updated_at)
+        .join(CollectionItem, CollectionItem.id == CollectionItemPhoto.collection_item_id)
+        .where(CollectionItem.card_id.in_(card_ids))
+        .order_by(CollectionItemPhoto.updated_at.desc())
+    ).all()
+    out: dict[int, tuple[int, str]] = {}
+    for cid, iid, ts in rows:
+        out.setdefault(cid, (iid, str(int(ts.timestamp() * 1000))))
+    return out
+
+
 def _grade_key_str(grade_value: str | None) -> str:
     return "raw" if grade_value is None else f"psa{grade_value}"
 
@@ -108,6 +124,7 @@ def search_cards(
             preview_grade = GradeKey(grade_company_id=1, grade_value=tokens[idx + 1])
 
     engine = ValuationEngine(db, {card.id for card, *_ in rows})
+    photos = _card_photos(db, {card.id for card, *_ in rows})
     results = []
     for card, brand_name, set_name, player_name in rows:
         key = ValuationKey(card.id, preview_grade)
@@ -123,6 +140,8 @@ def search_cards(
                 player=player_name,
                 rookie_flag=bool(card.rookie_flag),
                 default_image_url=card.default_image_url,
+                photo_item_id=photos.get(card.id, (None, None))[0],
+                photo_version=photos.get(card.id, (None, None))[1],
                 valuation_preview=v["estimated_price"],
                 comp_count=len(engine.comps.get(card.id, [])),
             )
@@ -156,6 +175,7 @@ def card_detail(
     engine = ValuationEngine(db, {card_id})
     comps = engine.comps.get(card_id, [])
     names = grade_company_names(db)
+    photo = _card_photos(db, {card_id}).get(card_id, (None, None))
 
     counts: dict[str | None, int] = defaultdict(int)
     for c in comps:
@@ -195,6 +215,8 @@ def card_detail(
             autograph_flag=bool(card.autograph_flag),
             patch_flag=bool(card.patch_flag),
             default_image_url=card.default_image_url,
+            photo_item_id=photo[0],
+            photo_version=photo[1],
         ),
         valuation=_valuation_out(card_id, v, label),
         stats=CardStatsOut(

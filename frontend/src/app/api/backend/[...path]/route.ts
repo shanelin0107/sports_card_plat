@@ -26,7 +26,10 @@ async function forward(req: NextRequest, { params }: { params: Promise<{ path: s
   }
   return new NextResponse(upstream.body, {
     status: upstream.status,
-    headers: { 'Content-Type': upstream.headers.get('Content-Type') ?? 'application/json' },
+    headers: {
+      'Content-Type': upstream.headers.get('Content-Type') ?? 'application/json',
+      ...(upstream.headers.get('Cache-Control') ? { 'Cache-Control': upstream.headers.get('Cache-Control')! } : {}),
+    },
   });
 }
 

@@ -1,10 +1,12 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
+import { CardThumb } from '@/components/CardThumb';
 import { ErrorState } from '@/components/ErrorState';
 import { Kpi } from '@/components/Kpi';
 import { PriceChart } from '@/components/PriceChart';
 import { confidenceLabel, longDate, money } from '@/lib/format';
+import { cardImage } from '@/lib/images';
 import { ApiError, apiGet, apiTry } from '@/lib/server-api';
 import type { CardDetail, Comp, SalesHistory } from '@/lib/types';
 
@@ -53,7 +55,9 @@ export default async function CardDetailPage({
       </Link>
 
       <section className="panel flex flex-wrap items-end justify-between gap-4 p-5">
-        <div>
+        <div className="flex items-end gap-5">
+          <CardThumb src={cardImage(m)} player={m.player} size="lg" />
+          <div>
           <p className="eyebrow">
             {m.sport} · {m.brand}
           </p>
@@ -65,6 +69,7 @@ export default async function CardDetailPage({
           <p className="text-muted">
             {m.year} {m.card_set} #{m.card_number}
           </p>
+          </div>
         </div>
         <div className="flex flex-col gap-2">
           <nav aria-label="Grade" className="flex flex-wrap gap-1">
