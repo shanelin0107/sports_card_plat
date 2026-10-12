@@ -25,7 +25,7 @@ export default async function CardDetailPage({
   searchParams: Promise<{ window?: string; grade?: string }>;
 }) {
   const { id } = await params;
-  const { window = '90d', grade } = await searchParams;
+  const { window = '30d', grade } = await searchParams;
   if (!/^\d+$/.test(id)) notFound();
 
   let detail: CardDetail;

@@ -29,3 +29,14 @@ def test_price_range():
     assert _price_range([100.0, 200.0, 300.0]) == (100.0, 300.0)
     low, high = _price_range([100.0, 110.0, 120.0, 130.0, 500.0])
     assert low == 110.0 and high == 130.0  # outlier excluded from IQR
+
+
+def test_split_outliers_is_median_based():
+    from app.services.valuation import split_outliers
+
+    kept, out = split_outliers([25, 27, 30, 22, 140, 5, 26])
+    assert sorted(out) == [5, 140] and 140 not in kept
+    # normal spread ($14–$46 around $26) is all kept
+    assert split_outliers([14.5, 22, 26, 26.5, 30, 46])[1] == []
+    # too few sales to judge: keep everything
+    assert split_outliers([10, 200, 30])[1] == []

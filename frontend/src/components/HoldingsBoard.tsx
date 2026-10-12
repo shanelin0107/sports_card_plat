@@ -129,7 +129,7 @@ function SelectedCard({ holding }: { holding: Holding }) {
       <div className="flex items-start gap-3.5">
         <CardThumb src={holdingImage(holding)} player={holding.player} size="md" />
         <div>
-          <p className="eyebrow">Valuation · {v?.window_used ?? '90d'} window</p>
+          <p className="eyebrow">Valuation · {v?.window_used ?? '30d'} window</p>
           <h2 className="mt-1 text-[18px] font-bold">
             {holding.player?.split(' ').slice(-1)[0]} {holding.card_set?.replace(/^(Topps|Panini) /, '')}
             {holding.parallel && holding.parallel !== 'Base' ? ` ${holding.parallel}` : ''} {holding.grade_label}

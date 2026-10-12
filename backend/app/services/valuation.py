@@ -7,6 +7,9 @@ Rules (in order):
 2. SIMILAR fallback: same player + brand + year + grade on other cards, blended in
    when exact comps are thin.
 3. Estimate = median; range = interquartile range (or min/max for < 4 comps).
+4. With 5+ comps, sales below 1/3 or above 3x the median are treated as outliers
+   (usually a mismatched listing: wrong parallel, a lot, a slab) and left out.
+   The default window is the last 30 days, widening when there are < 3 sales.
 
 Everything is computed from comps loaded in one or two queries, so pricing a whole
 collection or a page of search results is O(1) queries, not O(n).
@@ -26,12 +29,14 @@ from app.models.entities import Card, SaleComp
 WINDOW_TO_DAYS: dict[str, int | None] = {"30d": 30, "90d": 90, "1y": 365, "all": None}
 FALLBACK_CHAIN = ["30d", "90d", "1y", "all"]
 MIN_EXACT = 3
+OUTLIER_RATIO = 3.0  # keep sales within [median / 3, median * 3]
+OUTLIER_MIN_SALES = 5  # with fewer sales there isn't enough to tell what's normal
 SIMILAR_TARGET = 6
 
 
 def normalize_window(window: str | None) -> str:
-    w = (window or "90d").lower()
-    return w if w in WINDOW_TO_DAYS else "90d"
+    w = (window or "30d").lower()
+    return w if w in WINDOW_TO_DAYS else "30d"
 
 
 def window_cutoff(window: str) -> datetime | None:
@@ -89,6 +94,18 @@ class ValuationKey:
     card_id: int
     grade: GradeKey = GradeKey.any()
     card_parallel_id: int | None = None
+
+
+def split_outliers(prices: list[float]) -> tuple[list[float], list[float]]:
+    """(kept, outliers). Median-based, so one wild sale can't move the yardstick."""
+    if len(prices) < OUTLIER_MIN_SALES:
+        return list(prices), []
+    med = median(prices)
+    if med <= 0:
+        return list(prices), []
+    kept = [p for p in prices if med / OUTLIER_RATIO <= p <= med * OUTLIER_RATIO]
+    out = [p for p in prices if not (med / OUTLIER_RATIO <= p <= med * OUTLIER_RATIO)]
+    return kept, out
 
 
 def _price_range(prices: list[float]) -> tuple[float, float]:
@@ -167,7 +184,7 @@ class ValuationEngine:
             out.append(c)
         return out
 
-    def value(self, key: ValuationKey, window: str = "90d") -> dict:
+    def value(self, key: ValuationKey, window: str = "30d") -> dict:
         window = normalize_window(window)
         card = self.cards.get(key.card_id)
         if card is None:
@@ -187,7 +204,9 @@ class ValuationEngine:
 
         grade_label = key.grade.label()
         last_sale = exact[0].sold_at if exact else None
-        exact_prices = [c.total_price for c in exact]
+        exact_prices, outliers = split_outliers([c.total_price for c in exact])
+        if outliers:
+            reason_codes.append(f"OUTLIERS_EXCLUDED_{len(outliers)}")
 
         if len(exact_prices) >= MIN_EXACT:
             low, high = _price_range(exact_prices)
@@ -203,7 +222,8 @@ class ValuationEngine:
                 "similar_comp_count": 0,
                 "reason_codes": ["EXACT_COMPS", f"GRADE_{grade_label.upper().replace(' ', '_')}", f"WINDOW_{window_used.upper()}"]
                 + reason_codes,
-                "explanation": f"Median of {len(exact_prices)} {grade_label} sales of this exact card ({window_used} window).",
+                "explanation": f"Median of {len(exact_prices)} {grade_label} sales of this exact card ({window_used} window)"
+                + (f"; {len(outliers)} outlier sale(s) left out." if outliers else "."),
                 "methodology": "exact_recent_comps_median",
                 "window_used": window_used,
                 "last_sale_at": last_sale,
@@ -263,7 +283,7 @@ class ValuationEngine:
 def compute_card_valuation(
     db: Session,
     card_id: int,
-    window: str = "90d",
+    window: str = "30d",
     grade: GradeKey | None = None,
     card_parallel_id: int | None = None,
 ) -> dict:

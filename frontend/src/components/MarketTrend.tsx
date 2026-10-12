@@ -18,6 +18,7 @@ type Sale = {
   url: string | null;
   title: string | null;
   rolling_median: number;
+  outlier?: boolean;
 };
 type Summary = {
   grade: string;
@@ -34,6 +35,7 @@ type Summary = {
   volume: { date: string; count: number }[];
   trend?: { date: string; median: number; n: number }[];
   trend_days?: number;
+  outliers?: number;
   window_start: string | null;
   window_end: string;
 };
@@ -176,7 +178,9 @@ export function MarketTrend({ cardId, grade }: { cardId: number; grade: string }
     // Time axis runs from the start of the first day to the end of today.
     const x0 = data.window_start ? day(data.window_start) : day(data.sales[0].date);
     const x1 = Math.max(day(data.window_end), x0) + DAY;
-    const prices = data.sales.map((s) => s.price);
+    // Scale to the sales that count; far-off ones are pinned to the edge so they can't squash the chart.
+    const counted = data.sales.filter((s) => !s.outlier);
+    const prices = (counted.length ? counted : data.sales).map((s) => s.price);
     const lo = Math.min(...prices);
     const hi = Math.max(...prices);
     const padv = hi === lo ? hi * 0.1 || 1 : (hi - lo) * 0.08;
@@ -185,7 +189,7 @@ export function MarketTrend({ cardId, grade }: { cardId: number; grade: string }
     const y1 = Math.max(ticks[ticks.length - 1], hi);
     const xt = (t: number) => PAD.l + ((t - x0) / (x1 - x0)) * (W - PAD.l - PAD.r);
     const x = (iso: string) => xt(day(iso) + DAY / 2); // a calendar day's centre
-    const y = (v: number) => PAD.t + (1 - (v - y0) / (y1 - y0)) * (H_PRICE - PAD.t - PAD.b);
+    const y = (v: number) => PAD.t + (1 - (Math.min(Math.max(v, y0), y1) - y0) / (y1 - y0)) * (H_PRICE - PAD.t - PAD.b);
     const maxVol = Math.max(...data.volume.map((v) => v.count), 1);
     const barW = Math.max(3, Math.min(14, ((W - PAD.l - PAD.r) / ((x1 - x0) / DAY)) * 0.7));
     // Sales known only by date share one spot; fan them out a little inside their day.
@@ -209,6 +213,7 @@ export function MarketTrend({ cardId, grade }: { cardId: number; grade: string }
           <h2 className="panel-title">Sales trend · {data?.grade ?? '…'}</h2>
           <p className="text-[12px] text-muted">
             Dots = every recorded sale. Line = median of the last {data?.trend_days ?? 7} days. Bars = sales per day.
+            {data?.outliers ? ` ${data.outliers} far-off sale${data.outliers > 1 ? 's' : ''} (faded) left out of the median.` : ''}
           </p>
         </div>
         <div role="tablist" aria-label="Window" className="flex gap-1">
@@ -307,14 +312,16 @@ export function MarketTrend({ cardId, grade }: { cardId: number; grade: string }
                   cy={geo.y(s.price)}
                   r={hover?.id === s.id ? 6 : 4}
                   fill={hover?.id === s.id ? '#3DDC97' : '#0B0F14'}
-                  stroke="#7CC4FF"
+                  stroke={s.outlier ? '#9FB3C8' : '#7CC4FF'}
                   strokeWidth="2"
+                  strokeDasharray={s.outlier ? '2 2' : undefined}
+                  opacity={s.outlier && hover?.id !== s.id ? 0.5 : 1}
                   onMouseEnter={() => setHover(s)}
                   onMouseLeave={() => setHover(null)}
                   onClick={() => s.url && window.open(s.url, '_blank', 'noopener')}
                   style={{ cursor: s.url ? 'pointer' : 'default' }}
                 >
-                  <title>{`${s.date} · ${money(s.price)} · ${s.grade_label} · ${s.source}`}</title>
+                  <title>{`${s.date} · ${money(s.price)} · ${s.grade_label} · ${s.source}${s.outlier ? ' · outlier, not counted' : ''}`}</title>
                 </circle>
               ))}
               {/* volume */}
@@ -350,7 +357,7 @@ export function MarketTrend({ cardId, grade }: { cardId: number; grade: string }
             </svg>
             <div className="mt-1 min-h-[20px] font-mono text-[12px] text-muted" aria-live="polite">
               {hover
-                ? `${longDate(hover.date)} · ${money(hover.price)} · ${hover.grade_label} · ${hover.source}${hover.url ? ' · click to open' : ''}`
+                ? `${longDate(hover.date)} · ${money(hover.price)} · ${hover.grade_label} · ${hover.source}${hover.outlier ? ' · outlier, not counted in the median' : ''}${hover.url ? ' · click to open' : ''}`
                 : 'Hover a dot for details · click to open the listing'}
             </div>
           </div>

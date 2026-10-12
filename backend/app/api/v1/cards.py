@@ -36,6 +36,7 @@ from app.schemas.cards import (
 from app.services.portfolio import grade_company_names, grade_label
 from app.services.valuation import (
     GradeKey,
+    split_outliers,
     ValuationEngine,
     ValuationKey,
     normalize_window,
@@ -190,7 +191,7 @@ def _load_card(db: Session, card_id: int):
 def card_detail(
     card_id: int,
     grade: str | None = Query(default=None, description="raw | psa10 | psa9 | all"),
-    window: str = "90d",
+    window: str = "30d",
     db: Session = Depends(get_db),
 ):
     card, brand, card_set, player, sport = _load_card(db, card_id)
@@ -272,7 +273,7 @@ def card_detail(
 @router.get("/{card_id}/comps", response_model=list[CompOut])
 def card_comps(
     card_id: int,
-    window: str = "90d",
+    window: str = "30d",
     grade: str | None = None,
     limit: int = Query(default=20, ge=1, le=200),
     db: Session = Depends(get_db),
@@ -301,7 +302,7 @@ def card_comps(
 
 
 @router.get("/{card_id}/stats", response_model=CardStatsOut)
-def card_stats(card_id: int, window: str = "90d", grade: str | None = None, db: Session = Depends(get_db)):
+def card_stats(card_id: int, window: str = "30d", grade: str | None = None, db: Session = Depends(get_db)):
     engine = ValuationEngine(db, {card_id})
     prices = [c.total_price for c in engine.comps_for(ValuationKey(card_id, parse_grade_param(grade)), window)]
     return CardStatsOut(
@@ -316,7 +317,7 @@ def card_stats(card_id: int, window: str = "90d", grade: str | None = None, db: 
 @router.get("/{card_id}/sales-history", response_model=SalesHistoryOut)
 def card_sales_history(
     card_id: int,
-    window: str = "90d",
+    window: str = "30d",
     bucket: str = Query(default="day", pattern="^(day|week|month)$"),
     grade: str | None = None,
     db: Session = Depends(get_db),
@@ -411,8 +412,11 @@ def market_summary(
 
     cur = [r for r in rows if start is None or r.sold_at >= start]
     prev = [r for r in rows if start is not None and r.sold_at < start]
-    prices = [float(r.total_price) for r in cur]
-    prev_prices = [float(r.total_price) for r in prev]
+    # Median, range and trend leave out far-off sales (same rule as the estimate).
+    prices, outlier_prices = split_outliers([float(r.total_price) for r in cur])
+    prev_prices, _ = split_outliers([float(r.total_price) for r in prev])
+    kept_ok = set(prices)
+    outlier_set = {p for p in outlier_prices if p not in kept_ok}
     med = round(float(median(prices)), 2) if prices else None
     prev_med = round(float(median(prev_prices)), 2) if prev_prices else None
 
@@ -433,6 +437,7 @@ def market_summary(
                 "url": r.listing_url_raw if (r.listing_url_raw or "").startswith("http") else None,
                 "title": r.listing_title_raw,
                 "rolling_median": round(float(median(last5)), 2),  # median of this + previous 4 sales
+                "outlier": float(r.total_price) in outlier_set,
             }
         )
     volume: dict[str, int] = defaultdict(int)
@@ -443,11 +448,15 @@ def market_summary(
     # N days. Time-based, so a burst of same-day sales doesn't make the line jump around.
     trail = {"30d": 7, "90d": 14}.get(window, 30)
     trend = []
-    for d in sorted(volume):
+    for d in sorted({s["date"] for s in sales if not s["outlier"]}):  # days with a sale that counts
         dd = _dt.fromisoformat(d).date()
         win_prices = [
-            s["price"] for s in sales if 0 <= (dd - _dt.fromisoformat(s["date"]).date()).days < trail
+            s["price"]
+            for s in sales
+            if not s["outlier"] and 0 <= (dd - _dt.fromisoformat(s["date"]).date()).days < trail
         ]
+        if not win_prices:
+            continue
         trend.append({"date": d, "median": round(float(median(win_prices)), 2), "n": len(win_prices)})
 
     return {
@@ -458,14 +467,15 @@ def market_summary(
         "average": round(mean(prices), 2) if prices else None,
         "low": min(prices) if prices else None,
         "high": max(prices) if prices else None,
-        "count": len(prices),
+        "count": len(cur),
         "prev_median": prev_med,
-        "prev_count": len(prev_prices),
+        "prev_count": len(prev),
         "change_pct": round((med - prev_med) / prev_med * 100, 1) if med and prev_med else None,
         "last_sale": sales[-1] if sales else None,
         "sales": sales,
         "volume": [{"date": d, "count": c} for d, c in sorted(volume.items())],
         "trend": trend,
+        "outliers": len(outlier_prices),
         "trend_days": trail,
         "window_start": start.date().isoformat() if start else (sales[0]["date"] if sales else None),
         "window_end": now.date().isoformat(),

@@ -166,3 +166,19 @@ def test_trend_is_one_point_per_day(client):
     assert ms["trend_days"] == 7
     assert ms["trend"] == [{"date": d0, "median": 20.0, "n": 3}, {"date": d1, "median": 25.0, "n": 4}]
     assert all(s["ts"].startswith(s["date"]) for s in ms["sales"])
+
+
+def test_outlier_left_out_of_estimate_and_trend(client):
+    from datetime import date, timedelta
+
+    card = client.post("/api/v1/catalog/cards", json={"sport": "Football", "year": 2024, "brand": "Panini",
+                                                      "set_name": "Prizm", "player": "Outlier Test", "card_number": "9"}).json()["card_id"]
+    d = (date.today() - timedelta(days=2)).isoformat()
+    for p in (24, 26, 25, 27, 140):
+        client.post(f"/api/v1/market/sales/{card}", json={"price": p, "date": d})
+    v = client.get(f"/api/v1/valuations/cards/{card}", params={"grade": "raw"}).json()
+    assert v["estimated_price"] == 25.5 and v["exact_comp_count"] == 4
+    ms = client.get(f"/api/v1/cards/{card}/market-summary", params={"grade": "raw"}).json()
+    assert ms["count"] == 5 and ms["outliers"] == 1 and ms["median"] == 25.5 and ms["high"] == 27
+    assert [s["price"] for s in ms["sales"] if s["outlier"]] == [140.0]
+    assert ms["trend"][-1]["median"] == 25.5

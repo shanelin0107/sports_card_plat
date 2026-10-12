@@ -21,7 +21,7 @@ from app.models.entities import (
     ValuationSnapshot,
 )
 from app.schemas.collection import CollectionItemOut
-from app.services.valuation import GradeKey, ValuationEngine, ValuationKey, grade_key_for_item
+from app.services.valuation import GradeKey, ValuationEngine, ValuationKey, grade_key_for_item, split_outliers
 
 OWNER_PROFILE_ID = 1
 SNAPSHOT_WINDOW_DAYS = 90
@@ -86,13 +86,13 @@ def load_holdings(db: Session, item_ids: list[int] | None = None) -> list[Collec
     for item, card, brand, card_set, player, parallel in rows:
         gkey = grade_key_for_item(item.grade_company_id, item.grade_value, item.is_graded)
         vkey = ValuationKey(item.card_id, gkey, item.card_parallel_id)
-        v = engine.value(vkey, "90d")
+        v = engine.value(vkey, "30d")  # widens to 90d / 1y / all when there are < 3 sales
         unit = v["estimated_price"]
         cost = float(item.purchase_price) * item.quantity
         est = round(unit * item.quantity, 2) if unit is not None else None
         pnl = round(est - cost, 2) if est is not None else None
         spark = [c.total_price for c in reversed(engine.comps_for(vkey, "all")[:SPARK_POINTS])]
-        last30 = [c.total_price for c in engine.comps_for(vkey, "30d")]
+        last30, _ = split_outliers([c.total_price for c in engine.comps_for(vkey, "30d")])
         all_sales = engine.comps_for(vkey, "all")  # newest first
         out.append(
             CollectionItemOut(

@@ -9,7 +9,7 @@ router = APIRouter(prefix="/valuations", tags=["valuations"])
 
 
 @router.get("/cards/{card_id}", response_model=ValuationOut)
-def get_card_valuation(card_id: int, window: str = "90d", grade: str | None = None, db: Session = Depends(get_db)):
+def get_card_valuation(card_id: int, window: str = "30d", grade: str | None = None, db: Session = Depends(get_db)):
     gkey = parse_grade_param(grade)
     result = compute_card_valuation(db=db, card_id=card_id, window=window, grade=gkey)
     return ValuationOut(
