@@ -9,6 +9,7 @@ import { money } from '@/lib/format';
 import type { Holding } from '@/lib/types';
 
 import type { SearchListing } from './EbaySearch';
+import { SalesGrid, emptyRow, saveSales, validRows, type SaleRow } from './SalesGrid';
 
 type CardFields = {
   sport: string | null;
@@ -44,6 +45,8 @@ export function AddFromListing({ listing, onClose }: { listing: SearchListing; o
   const [photoMode, setPhotoMode] = useState<'listing' | 'own' | 'none'>('listing');
   const [own, setOwn] = useState<{ content_type: string; data_base64: string; preview: string } | null>(null);
   const [ownUrl, setOwnUrl] = useState('');
+  const [sales, setSales] = useState<SaleRow[]>([emptyRow()]);
+  const [salesResult, setSalesResult] = useState<{ saved: number; errors: string[] } | null>(null);
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -92,9 +95,15 @@ export function AddFromListing({ listing, onClose }: { listing: SearchListing; o
           body: JSON.stringify({ content_type: own.content_type, data_base64: own.data_base64 }),
         });
       }
-      // start pulling sold data for the new card in the background
-      const g = h.grade_value ? `psa${h.grade_value}` : 'raw';
-      api(`/market/sync/${h.card_id}?grade=${g}`, { method: 'POST' }).catch(() => {});
+      // sales typed/pasted in this dialog
+      if (validRows(sales).length) {
+        setSalesResult(await saveSales(h.card_id, sales));
+        saved = await api<Holding>(`/collection/items/${h.id}`);
+      } else {
+        // nothing entered: try to find sold data in the background
+        const g = h.grade_value ? `psa${h.grade_value}` : 'raw';
+        api(`/market/sync/${h.card_id}?grade=${g}`, { method: 'POST' }).catch(() => {});
+      }
       setDone(saved);
     } catch (e) {
       setErr((e as Error).message);
@@ -123,7 +132,7 @@ export function AddFromListing({ listing, onClose }: { listing: SearchListing; o
         aria-label="Add to collection"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.key === 'Escape' && onClose()}
-        className="panel w-full max-w-3xl outline-none"
+        className="panel w-full max-w-5xl outline-none"
       >
         <div className="panel-head">
           <h2 className="panel-title">Add to collection</h2>
@@ -135,9 +144,15 @@ export function AddFromListing({ listing, onClose }: { listing: SearchListing; o
         {done ? (
           <div className="space-y-4 p-5">
             <p className="font-bold text-up">Added: {done.title}</p>
-            <p className="text-[13px] text-muted">
-              Looking up recent sales for this card now. Its median and last sale will show in your collection once found.
-            </p>
+            {salesResult ? (
+              <p className="text-[13px] text-muted">
+                Saved {salesResult.saved} sale{salesResult.saved === 1 ? '' : 's'}
+                {done.median_30d !== null ? ` · 30-day median ${money(done.median_30d)} · last sale ${money(done.last_sale_price)}` : ''}.
+                {salesResult.errors.length > 0 && <span className="block text-down">Not saved: {salesResult.errors.join(' · ')}</span>}
+              </p>
+            ) : (
+              <p className="text-[13px] text-muted">No sales entered — looking for recent sales in the background. You can add them later on the card page.</p>
+            )}
             <div className="flex flex-wrap gap-2">
               <Link href={`/cards/${done.card_id}?grade=${done.grade_value ? `psa${done.grade_value}` : 'raw'}`} className="btn-primary text-[#06281A] hover:text-[#06281A]">
                 Open card page
@@ -310,10 +325,21 @@ export function AddFromListing({ listing, onClose }: { listing: SearchListing; o
                   </div>
                   <p className="mt-2 text-[12px] text-muted">Price is pre-filled with this listing’s {money(item?.price ?? listing.price)} — change it to what you actually paid.</p>
                 </div>
+                <div className="border-t border-line pt-4">
+                  <p className="eyebrow mb-2">Recent sales (optional)</p>
+                  <SalesGrid
+                    rows={sales}
+                    onChange={setSales}
+                    defaultGrade={c.grade_value ? `${c.grader ?? 'PSA'} ${c.grade_value}` : 'Raw'}
+                    soldSearchUrl={`https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(
+                      [c.year, c.set_name, c.player, c.card_number, c.parallel && c.parallel !== 'Base' ? c.parallel : ''].filter(Boolean).join(' '),
+                    )}&_sacat=261328&LH_Sold=1&LH_Complete=1&_sop=13`}
+                  />
+                </div>
                 {err && <p className="text-[13px] text-down">{err}</p>}
                 <div className="flex gap-2">
                   <button className="btn-primary" disabled={busy}>
-                    {busy ? 'Adding…' : 'Add to collection'}
+                    {busy ? 'Adding…' : validRows(sales).length ? `Add to collection + ${validRows(sales).length} sale(s)` : 'Add to collection'}
                   </button>
                   <button type="button" className="btn-ghost" onClick={onClose}>
                     Cancel

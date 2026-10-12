@@ -12,6 +12,7 @@ import type { CardSearchResult, Holding } from '@/lib/types';
 import { CardPicker } from './CardPicker';
 import { CardThumb } from './CardThumb';
 import { EbayPhotoPicker } from './EbayPhotoPicker';
+import { SalesGrid, emptyRow, saveSales, validRows, type SaleRow } from './SalesGrid';
 import { NewCardForm } from './NewCardForm';
 
 const GRADES = ['raw', '10', '9', '8', '7', '6', '5', '4', '3', '2', '1'];
@@ -238,6 +239,7 @@ function HoldingForm({
   const [photo, setPhoto] = useState<{ content_type: string; data_base64: string; preview: string } | null>(null);
   const [removePhoto, setRemovePhoto] = useState(false);
   const [picking, setPicking] = useState(false);
+  const [sales, setSales] = useState<SaleRow[]>([emptyRow()]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const set = (k: keyof Draft, v: string | number | null) => setD((x) => ({ ...x, [k]: v }));
@@ -276,6 +278,11 @@ function HoldingForm({
         });
       } else if (removePhoto && itemId) {
         h = await api<Holding>(`/collection/items/${h.id}/photo`, { method: 'DELETE' });
+      }
+      if (validRows(sales).length) {
+        const r = await saveSales(h.card_id, sales);
+        if (r.errors.length) setErr(`Some sales weren’t saved: ${r.errors.join(' · ')}`);
+        h = await api<Holding>(`/collection/items/${h.id}`);
       }
       onSaved(h);
     } catch (e) {
@@ -447,6 +454,17 @@ function HoldingForm({
           </label>
           <input id="hf-notes" className="field" value={d.notes} onChange={(e) => set('notes', e.target.value)} placeholder="Optional" />
         </div>
+        {d.card_id && (
+          <div className="space-y-2 border-t border-line pt-4">
+            <p className="eyebrow">{itemId ? 'Add sales for this card (optional)' : 'Recent sales (optional)'}</p>
+            <SalesGrid
+              rows={sales}
+              onChange={setSales}
+              defaultGrade={d.grade === 'raw' ? 'Raw' : `PSA ${d.grade}`}
+              soldSearchUrl={`https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(d.card_title.replace(/#/g, ''))}&_sacat=261328&LH_Sold=1&LH_Complete=1&_sop=13`}
+            />
+          </div>
+        )}
         {err && <p className="text-[13px] text-down">{err}</p>}
         <div className="flex gap-2">
           <button className="btn-primary" disabled={busy || !d.card_id}>
