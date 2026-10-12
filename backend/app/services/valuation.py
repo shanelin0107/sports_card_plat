@@ -209,7 +209,15 @@ class ValuationEngine:
                 "last_sale_at": last_sale,
             }
 
-        # Similar comps: same player/brand/year/grade, other cards, all-time if needed.
+        # No sale of THIS card at this grade: don't invent a price from other cards
+        # (a Lazer parallel is not worth what a base or an insert of the same player sells for).
+        if not exact_prices:
+            return _empty(
+                "NO_COMPS",
+                f"No {grade_label} sales recorded for this card yet. Add a sale to price it.",
+            )
+
+        # Similar comps: same player/brand/year/grade, other cards, only to support thin exact comps.
         peers = self.peer_ids.get((card.player_id, card.brand_id, card.year), set()) - {card.id}
         similar: list[CompRow] = []
         for pid in peers:

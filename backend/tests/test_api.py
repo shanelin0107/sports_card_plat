@@ -138,3 +138,17 @@ def test_manual_sale_and_links(client):
     assert any(s["price"] == 205.0 and s["source"] == "eBay" for s in ms["sales"])
     ms_raw = client.get("/api/v1/cards/1/market-summary", params={"grade": "raw", "window": "all"}).json()
     assert any(s["price"] == 90.0 and s["source"] == "Manual" for s in ms_raw["sales"])
+
+
+def test_no_estimate_from_other_cards_until_this_card_sells(client):
+    base = {"sport": "Football", "year": 2024, "brand": "Panini", "set_name": "Prizm", "player": "Test Rookie"}
+    peer = client.post("/api/v1/catalog/cards", json={**base, "card_number": "1"}).json()["card_id"]
+    mine = client.post("/api/v1/catalog/cards", json={**base, "card_number": "329", "parallel": "Lazer"}).json()["card_id"]
+    for d in ("2026-10-01", "2026-10-02", "2026-10-03"):
+        assert client.post(f"/api/v1/market/sales/{peer}", json={"price": 20, "date": d}).status_code == 201
+    # Sales of a different card must not price this one.
+    v = client.get(f"/api/v1/valuations/cards/{mine}", params={"grade": "raw"}).json()
+    assert v["estimated_price"] is None
+    assert client.post(f"/api/v1/market/sales/{mine}", json={"price": 32, "date": "2026-10-04"}).status_code == 201
+    v = client.get(f"/api/v1/valuations/cards/{mine}", params={"grade": "raw"}).json()
+    assert v["estimated_price"] is not None and v["exact_comp_count"] == 1

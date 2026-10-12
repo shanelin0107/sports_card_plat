@@ -9,7 +9,15 @@ export type SaleRow = { date: string; price: string; shipping: string; grade: st
 const GRADE_OPTIONS = ['Raw', 'PSA 10', 'PSA 9', 'PSA 8', 'PSA 7', 'BGS 10', 'BGS 9.5', 'BGS 9', 'SGC 10', 'SGC 9.5', 'SGC 9', 'CGC 10', 'CGC 9.5'];
 const MONTHS: Record<string, number> = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
 
-export const emptyRow = (grade = 'Raw'): SaleRow => ({ date: '', price: '', shipping: '', grade, url: '' });
+/** Today as YYYY-MM-DD in the user's own time zone (toISOString() is UTC and can be a day off). */
+export function localToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// The date starts as today: Safari shows today's date greyed out in an EMPTY date box,
+// so a blank default looked filled in but was never saved.
+export const emptyRow = (grade = 'Raw'): SaleRow => ({ date: localToday(), price: '', shipping: '', grade, url: '' });
 
 function isoDate(s: string): string | null {
   const t = s.trim();
@@ -41,7 +49,7 @@ export function parsePasted(text: string, defaultGrade: string): SaleRow[] {
   const rows: SaleRow[] = [];
   for (const line of text.split(/\r?\n/)) {
     if (!line.trim()) continue;
-    const row = emptyRow(defaultGrade);
+    const row = { ...emptyRow(defaultGrade), date: '' };
     const prices: string[] = [];
     if (line.includes('\t')) {
       for (const raw of line.split('\t')) {
@@ -71,13 +79,13 @@ export function parsePasted(text: string, defaultGrade: string): SaleRow[] {
     }
     if (prices[0]) row.price = prices[0];
     if (prices[1]) row.shipping = prices[1];
-    if (row.price || row.date) rows.push(row);
+    if (row.price || row.date) rows.push(row.date ? row : { ...row, date: localToday() });
   }
   return rows;
 }
 
 export function validRows(rows: SaleRow[]) {
-  return rows.filter((r) => r.price && Number(r.price) > 0 && r.date);
+  return rows.filter((r) => r.price && Number(r.price) > 0).map((r) => (r.date ? r : { ...r, date: localToday() }));
 }
 
 /** Save rows as sales on a card. Returns how many were saved and any errors. */
@@ -128,12 +136,12 @@ export function SalesGrid({
       setPasteNote('Couldn’t find dates or prices in what you pasted.');
       return;
     }
-    const kept = rows.filter((r) => r.price || r.date || r.url);
+    const kept = rows.filter((r) => r.price || r.url);
     onChange([...kept, ...parsed]);
     setPasteNote(`Pasted ${parsed.length} row${parsed.length > 1 ? 's' : ''}. Check the grades before saving.`);
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localToday();
   const cell = 'h-10 w-full min-w-0 rounded border border-edge bg-base px-2 font-mono text-[12px]';
 
   return (
