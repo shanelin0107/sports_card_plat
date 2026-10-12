@@ -98,3 +98,32 @@ def test_endpoint_flow_and_save_comp(client, monkeypatch):
 
     comps = client.get(f"/api/v1/cards/{card['card_id']}/comps", params={"window": "all"}).json()
     assert [c["total_price"] for c in comps] == [42.0] and comps[0]["grade_label"] == "Raw"
+
+
+def test_sync_falls_back_to_ai_and_auto_saves(client, monkeypatch):
+    from app.core.config import settings
+    from app.services import ebay
+
+    monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+    monkeypatch.setattr(settings, "ebay_client_id", "")  # eBay off -> AI fallback
+    monkeypatch.setattr(ai_research, "_client", lambda: FakeClient())
+    card = client.post(
+        "/api/v1/catalog/cards",
+        json={"sport": "Basketball", "year": 2024, "brand": "Panini", "set_name": "Prizm Black", "player": "Damian Lillard",
+              "card_number": "91", "parallel": "Orange Wave"},
+    ).json()
+    cid = card["card_id"]
+    r = client.post(f"/api/v1/market/sync/{cid}", params={"grade": "raw"}).json()
+    assert r["status"] == "ai_started"
+    job = client.get(f"/api/v1/ai/price-research/{r['research_id']}").json()
+    assert job["status"] == "completed" and job["result"]["auto_saved"] == 1
+    # the fake data's sale is dated 2026-09-30 -> visible in "all"
+    ms = client.get(f"/api/v1/cards/{cid}/market-summary", params={"grade": "raw", "window": "all"}).json()
+    assert ms["count"] == 1 and ms["sales"][0]["price"] == 42.0
+    # second sync within 24h doesn't spend again
+    assert client.post(f"/api/v1/market/sync/{cid}", params={"grade": "raw"}).json()["status"] == "ai_recent"
+    # owner deletes the wrong sale; it stays deleted
+    comp_id = ms["sales"][0]["id"]
+    assert client.delete(f"/api/v1/cards/{cid}/comps/{comp_id}").json() == {"deleted": True}
+    assert client.get(f"/api/v1/cards/{cid}/market-summary", params={"grade": "raw", "window": "all"}).json()["count"] == 0
+    del ebay

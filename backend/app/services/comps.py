@@ -63,6 +63,9 @@ def create_confirmed_comp(
         comp = db.scalars(select(SaleComp).where(SaleComp.normalized_sale_id == norm.id)).first() if norm else None
         if comp:
             return comp, False
+        if norm is not None:
+            # The owner removed this sale earlier; don't bring it back automatically.
+            raise CompError("This sale was removed from the card earlier")
 
     parsed = parse_title(title or "", grade)
     grade_value = None if (grade or "").strip().lower() in ("", "raw") else parsed.grade_value

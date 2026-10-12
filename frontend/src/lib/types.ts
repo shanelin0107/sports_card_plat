@@ -30,6 +30,8 @@ export type Holding = {
   valuation_method: string | null;
   exact_comp_count: number;
   spark: number[];
+  median_30d: number | null;
+  sales_30d: number;
 };
 
 export type Mover = {

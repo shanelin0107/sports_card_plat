@@ -77,7 +77,12 @@ export function HoldingsBoard({ holdings }: { holdings: Holding[] }) {
                       </td>
                       <td className="td">{h.grade_label}</td>
                       <td className="td text-right">{money(h.purchase_price * h.quantity)}</td>
-                      <td className="td text-right text-ink">{money(h.estimated_value)}</td>
+                      <td className="td text-right text-ink">
+                        {money(h.estimated_value)}
+                        <span className="block text-[11px] text-muted">
+                          {h.sales_30d > 0 ? `30d ${money(h.median_30d, { whole: true })} · ${h.sales_30d} sold` : '0 sold 30d'}
+                        </span>
+                      </td>
                       <td className="td">
                         <Sparkline values={h.spark} />
                       </td>

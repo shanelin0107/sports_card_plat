@@ -1,11 +1,13 @@
+from datetime import UTC, datetime, timedelta
+
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models.entities import Card, CardParallel, CardSet, Player
+from app.models.entities import AiPriceResearch, Card, CardParallel, CardSet, Player, SaleComp
 from app.services import ebay
 from app.services.comps import CompError, create_confirmed_comp
 
@@ -116,3 +118,100 @@ def save_sold(body: SaveSoldIn, db: Session = Depends(get_db)):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     db.commit()
     return {"sale_comp_id": comp.id, "already_saved": not created}
+
+
+_last_sync: dict[tuple[int, str | None], float] = {}
+SYNC_INTERVAL_SECONDS = 6 * 3600
+
+
+@router.post("/sync/{card_id}")
+def sync_card(
+    card_id: int,
+    background: BackgroundTasks,
+    grade: str | None = None,
+    force: bool = False,
+    db: Session = Depends(get_db),
+):
+    """Pull eBay sold history for one card and auto-save exact matches as comps.
+
+    Only eBay's own sold records (Marketplace Insights) are auto-saved; listings that
+    don't match the card exactly (player, year, set, #, parallel, grade) are skipped.
+    """
+    import time
+
+    if not ebay.ebay_enabled():
+        return _ai_fallback(db, background, card_id, grade, force) or {"status": "ebay_off", "added": 0}
+    key = (card_id, grade)
+    if not force and time.time() - _last_sync.get(key, 0) < SYNC_INTERVAL_SECONDS:
+        return {"status": "recent", "added": 0}
+    query, target = card_target(db, card_id, _grade_text(grade))
+    try:
+        data = ebay.search_listings(query, target)
+    except (ebay.EbayError, httpx.HTTPError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    _last_sync[key] = time.time()
+    if not data["insights_available"]:
+        fb = _ai_fallback(db, background, card_id, grade, force)
+        return fb or {"status": "no_sold_access", "added": 0, "active_listings": len(data["active"])}
+
+    added = 0
+    for s in data["sold"] or []:
+        if not (s["exact_match"] and s["date"] and s["url"]):
+            continue
+        try:
+            _, created = create_confirmed_comp(
+                db,
+                card_id=card_id,
+                listing_id=s["item_id"],
+                title=s["title"],
+                url=s["url"],
+                price=s["price"],
+                date=s["date"],
+                grade=s["grade"],
+                source="eBay",
+                match_method="ebay_insights_auto",
+                payload=s,
+            )
+            added += int(created)
+        except CompError:
+            continue
+    db.commit()
+    return {"status": "synced", "added": added, "sold_found": len(data["sold"] or [])}
+
+
+AI_SYNC_INTERVAL = timedelta(hours=24)
+
+
+def _ai_fallback(db: Session, background: BackgroundTasks, card_id: int, grade: str | None, force: bool) -> dict | None:
+    """No eBay sold access: if the card has no sales in the last 30 days, let Claude look for
+    them (at most once per card+grade per day) and auto-save exact, dated, verified sales."""
+    from app.api.v1.ai import _card_context, start_job
+    from app.services.ai_research import ai_enabled
+
+    if not ai_enabled():
+        return None
+    gtext = _grade_text(grade)
+    running = db.scalars(
+        select(AiPriceResearch).where(AiPriceResearch.card_id == card_id, AiPriceResearch.status == "running")
+    ).first()
+    if running:
+        return {"status": "ai_running", "added": 0, "research_id": running.id}
+    recent = db.scalars(
+        select(AiPriceResearch)
+        .where(
+            AiPriceResearch.card_id == card_id,
+            AiPriceResearch.grade.is_(None) if gtext is None else AiPriceResearch.grade == gtext,
+            AiPriceResearch.created_at >= datetime.now(UTC) - AI_SYNC_INTERVAL,
+        )
+        .order_by(AiPriceResearch.created_at.desc())
+    ).first()
+    if recent and not force:
+        return {"status": "ai_recent", "added": 0, "research_id": recent.id}
+    stmt = select(SaleComp.id).where(SaleComp.card_id == card_id, SaleComp.sold_at >= datetime.now(UTC) - timedelta(days=30))
+    if gtext:
+        stmt = stmt.where(SaleComp.grade_value.is_(None) if gtext == "Raw" else SaleComp.grade_value == gtext.split()[-1])
+    if db.scalars(stmt).first() and not force:
+        return None  # already have recent sales; don't spend money
+    query, ctx = _card_context(db, card_id)
+    job = start_job(db, background, query=query, card_id=card_id, grade=gtext, ctx=ctx, auto_save=True)
+    return {"status": "ai_started", "added": 0, "research_id": job.id}

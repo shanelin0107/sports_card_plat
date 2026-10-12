@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import statistics
 from datetime import date
 
 from sqlalchemy import select
@@ -74,6 +75,7 @@ def load_holdings(db: Session, item_ids: list[int] | None = None) -> list[Collec
         est = round(unit * item.quantity, 2) if unit is not None else None
         pnl = round(est - cost, 2) if est is not None else None
         spark = [c.total_price for c in reversed(engine.comps_for(vkey, "all")[:SPARK_POINTS])]
+        last30 = [c.total_price for c in engine.comps_for(vkey, "30d")]
         out.append(
             CollectionItemOut(
                 id=item.id,
@@ -110,6 +112,8 @@ def load_holdings(db: Session, item_ids: list[int] | None = None) -> list[Collec
                 valuation_method=v["methodology"],
                 exact_comp_count=v["exact_comp_count"],
                 spark=spark,
+                median_30d=round(float(statistics.median(last30)), 2) if last30 else None,
+                sales_30d=len(last30),
             )
         )
     return out

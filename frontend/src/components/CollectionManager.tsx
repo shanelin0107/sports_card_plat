@@ -61,6 +61,7 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
   const [editing, setEditing] = useState<number | 'new' | null>(startAdding || newCardQuery ? 'new' : null);
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   async function remove(id: number) {
     setError(null);
@@ -77,6 +78,12 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
   function saved(h: Holding, isNew: boolean) {
     setItems((xs) => (isNew ? [h, ...xs] : xs.map((x) => (x.id === h.id ? h : x))));
     setEditing(null);
+    if (isNew) {
+      // Kick off market data for the new card (eBay sold history, or AI search) in the background.
+      const g = h.grade_value ? `psa${h.grade_value}` : 'raw';
+      api(`/market/sync/${h.card_id}?grade=${g}`, { method: 'POST' }).catch(() => {});
+      setNotice(`Added. Looking up recent sales for ${h.player ?? 'this card'} — open the card to watch it fill in.`);
+    }
   }
 
   const totalCost = items.reduce((s, h) => s + h.purchase_price * h.quantity, 0);
@@ -101,6 +108,11 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
 
       {editing === 'new' && <HoldingForm draft={blank()} newCardQuery={newCardQuery} onSaved={(h) => saved(h, true)} onCancel={() => setEditing(null)} />}
       {error && <p className="text-[13px] text-down">{error}</p>}
+      {notice && (
+        <p className="text-[13px] text-up" role="status">
+          {notice}
+        </p>
+      )}
 
       <section className="panel" aria-label="All holdings">
         {items.length === 0 ? (
@@ -116,6 +128,7 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
                   <th className="th text-right">Paid</th>
                   <th className="th">Bought</th>
                   <th className="th text-right">Est.</th>
+                  <th className="th text-right">30d median · vol</th>
                   <th className="th text-right">P&amp;L</th>
                   <th className="th pr-5 text-right">
                     <span className="sr-only">Actions</span>
@@ -126,7 +139,7 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
                 {items.map((h) =>
                   editing === h.id ? (
                     <tr key={h.id} className="border-t border-line">
-                      <td colSpan={8} className="p-4">
+                      <td colSpan={9} className="p-4">
                         <HoldingForm draft={fromHolding(h)} itemId={h.id} onSaved={(x) => saved(x, false)} onCancel={() => setEditing(null)} />
                       </td>
                     </tr>
@@ -154,6 +167,10 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
                       <td className="td text-right">{money(h.purchase_price)}</td>
                       <td className="td text-muted">{h.purchase_date}</td>
                       <td className="td text-right">{money(h.estimated_value)}</td>
+                      <td className="td text-right">
+                        {h.sales_30d > 0 ? money(h.median_30d) : '—'}
+                        <span className="block text-[11px] text-muted">{h.sales_30d} sold</span>
+                      </td>
                       <td className={`td text-right ${tone(h.unrealized_pnl)}`}>
                         {signedMoney(h.unrealized_pnl)}
                         <span className="block text-[11px]">{pct(h.unrealized_pnl_pct)}</span>

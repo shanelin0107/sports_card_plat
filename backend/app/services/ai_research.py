@@ -243,10 +243,15 @@ def execute_job(job_id: int, session_factory) -> None:
         job = db.get(AiPriceResearch, job_id)
         if job is None:
             return
-        card_ctx = (job.result_json or {}).get("_card_context")
+        meta = job.result_json or {}
+        card_ctx = meta.get("_card_context")
+        auto_save = bool(meta.get("_auto_save"))
         try:
             out = run_research(job.query, job.grade, card_ctx)
-            job.result_json = out["result"]
+            result = out["result"]
+            if auto_save and job.card_id:
+                result["auto_saved"] = _auto_save_sold(db, job, result)
+            job.result_json = result  # assign after mutations so the JSON column is persisted
             job.status = "completed"
             job.searches_used = out["usage"]["searches"]
             job.input_tokens = out["usage"]["input_tokens"]
@@ -259,3 +264,32 @@ def execute_job(job_id: int, session_factory) -> None:
         db.commit()
     finally:
         db.close()
+
+
+def _auto_save_sold(db: Session, job: AiPriceResearch, result: dict) -> int:
+    """Save exact, dated, source-verified sold records as comps (used by background sync)."""
+    from app.services.comps import CompError, create_confirmed_comp
+
+    saved = 0
+    for i, item in enumerate(result.get("sold") or []):
+        if not (item.get("exact_match") and item.get("date") and item.get("url")):
+            continue
+        try:
+            comp, created = create_confirmed_comp(
+                db,
+                card_id=job.card_id,
+                listing_id=f"ai-{job.id}-{i}",
+                title=item.get("title", ""),
+                url=item["url"],
+                price=float(item["price"]),
+                date=item["date"],
+                grade=item.get("grade"),
+                source=item.get("source", ""),
+                match_method="ai_research_auto",
+                payload={"ai_research_id": job.id, "item": item},
+            )
+        except (CompError, ValueError, TypeError):
+            continue
+        item["saved_comp_id"] = comp.id
+        saved += int(created)
+    return saved

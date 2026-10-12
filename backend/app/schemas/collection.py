@@ -54,6 +54,8 @@ class CollectionItemOut(CollectionItemCreate):
     valuation_method: str | None = None
     exact_comp_count: int = 0
     spark: list[float] = []
+    median_30d: float | None = None
+    sales_30d: int = 0
 
 
 class PhotoUpload(BaseModel):

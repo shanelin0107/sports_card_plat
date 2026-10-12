@@ -93,3 +93,17 @@ def test_listings_with_insights_and_save(client, monkeypatch):
 def test_bad_credentials_message(monkeypatch):
     monkeypatch.setattr(ebay, "_http", lambda: httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(401, json={"error": "invalid_client"}))))
     assert "rejected the credentials" in ebay.check_access()["error"]
+
+
+def test_sync_auto_saves_exact_sold(client, monkeypatch):
+    _, http = _mock(insights=True)
+    monkeypatch.setattr(ebay, "_http", http)
+    card = client.post("/api/v1/catalog/cards", json={"sport": "Basketball", "year": 2024, "brand": "Panini", "set_name": "Prizm Black",
+                                                      "player": "Damian Lillard", "card_number": "91", "parallel": "Orange Wave"}).json()
+    r = client.post(f"/api/v1/market/sync/{card['card_id']}", params={"grade": "raw"}).json()
+    assert r == {"status": "synced", "added": 1, "sold_found": 1}
+    assert client.post(f"/api/v1/market/sync/{card['card_id']}", params={"grade": "raw"}).json()["status"] == "recent"
+    again = client.post(f"/api/v1/market/sync/{card['card_id']}", params={"grade": "raw", "force": True}).json()
+    assert again["added"] == 0  # idempotent
+    ms = client.get(f"/api/v1/cards/{card['card_id']}/market-summary", params={"grade": "raw", "window": "all"}).json()
+    assert ms["count"] == 1 and ms["median"] == 52.0 and ms["sales"][0]["source"] == "eBay" and ms["sales"][0]["url"]

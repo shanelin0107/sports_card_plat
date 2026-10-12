@@ -6,11 +6,11 @@ import { CardThumb } from '@/components/CardThumb';
 import { EbayMarketPanel } from '@/components/EbayMarketPanel';
 import { ErrorState } from '@/components/ErrorState';
 import { Kpi } from '@/components/Kpi';
-import { PriceChart } from '@/components/PriceChart';
+import { MarketTrend } from '@/components/MarketTrend';
 import { confidenceLabel, longDate, money } from '@/lib/format';
 import { cardImage } from '@/lib/images';
-import { ApiError, apiGet, apiTry } from '@/lib/server-api';
-import type { CardDetail, Comp, SalesHistory } from '@/lib/types';
+import { ApiError, apiGet } from '@/lib/server-api';
+import type { CardDetail } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,11 +40,6 @@ export default async function CardDetailPage({
   }
 
   const activeGrade = grade ?? detail.grades.find((g) => g.label === detail.valuation.grade)?.key ?? 'all';
-  const gq = `grade=${activeGrade}`;
-  const [history, comps] = await Promise.all([
-    apiTry<SalesHistory>(`/cards/${id}/sales-history?window=${window}&${gq}`),
-    apiTry<Comp[]>(`/cards/${id}/comps?window=${window}&${gq}&limit=50`),
-  ]);
   const m = detail.metadata;
   const v = detail.valuation;
   const conf = confidenceLabel(v.confidence_score);
@@ -108,16 +103,10 @@ export default async function CardDetailPage({
         <Kpi label={`Comps · ${window}`} value={detail.stats.count} sub={`Median ${money(detail.stats.median_price)} · avg ${money(detail.stats.average_price)}`} />
       </section>
 
+      <MarketTrend cardId={m.id} grade={activeGrade} />
+
       <div className="flex flex-wrap items-start gap-5">
-        <section className="panel min-w-0 flex-[2_1_520px] p-5" aria-label="Price history">
-          <h2 className="panel-title mb-3">Sold price history · {v.grade}</h2>
-          <PriceChart
-            height={200}
-            label={`${v.grade} sold prices`}
-            points={(history?.price_series ?? []).map((p) => ({ date: p.date, value: p.median_price ?? 0 }))}
-          />
-        </section>
-        <section className="panel flex min-w-0 flex-[1_1_320px] flex-col gap-3 p-5" aria-label="How this was valued">
+        <section className="panel flex min-w-0 flex-1 flex-col gap-3 p-5" aria-label="How this was valued">
           <h2 className="panel-title">How this was valued</h2>
           <p className="text-[13px] leading-relaxed text-ink">{v.explanation}</p>
           <div className="flex flex-wrap gap-1.5">
@@ -156,29 +145,6 @@ export default async function CardDetailPage({
 
       <AiPricePanel cardId={m.id} grade={activeGrade} />
 
-      <section className="panel" aria-label="Sold comps">
-        <div className="panel-head">
-          <h2 className="panel-title">Sold comps</h2>
-          <span className="text-[12px] text-muted">price incl. shipping</span>
-        </div>
-        {!comps || comps.length === 0 ? (
-          <p className="p-5 text-muted">No sales in this window — try a wider window.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[420px] border-collapse font-mono text-[13px]">
-              <tbody>
-                {comps.map((c) => (
-                  <tr key={c.id} className="border-t border-line first:border-0">
-                    <td className="py-2.5 pl-5 pr-3 text-muted">{longDate(c.sold_at)}</td>
-                    <td className="px-3">{c.grade_label}</td>
-                    <td className="py-2.5 pl-3 pr-5 text-right">{money(c.total_price)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
     </main>
   );
 }

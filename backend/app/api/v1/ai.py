@@ -19,6 +19,7 @@ class ResearchIn(BaseModel):
     query: str | None = Field(default=None, max_length=300)
     card_id: int | None = None
     grade: str | None = Field(default=None, max_length=20)
+    auto_save: bool = False  # save exact, dated, verified sales without asking
 
 
 class SaveCompIn(BaseModel):
@@ -27,8 +28,7 @@ class SaveCompIn(BaseModel):
 
 
 def _out(job: AiPriceResearch) -> dict:
-    result = dict(job.result_json or {})
-    result.pop("_card_context", None)
+    result = {k: v for k, v in (job.result_json or {}).items() if not k.startswith("_")}
     return {
         "id": job.id,
         "card_id": job.card_id,
@@ -88,19 +88,29 @@ def start_research(body: ResearchIn, background: BackgroundTasks, db: Session = 
     if not query:
         raise HTTPException(status_code=422, detail="Give a card description or card_id")
 
+    job = start_job(db, background, query=query, card_id=body.card_id, grade=body.grade, ctx=ctx, auto_save=body.auto_save)
+    return _out(job)
+
+
+def start_job(db: Session, background: BackgroundTasks, *, query: str, card_id: int | None, grade: str | None, ctx: dict | None, auto_save: bool):
+    meta: dict = {}
+    if ctx:
+        meta["_card_context"] = ctx
+    if auto_save:
+        meta["_auto_save"] = True
     job = AiPriceResearch(
-        card_id=body.card_id,
+        card_id=card_id,
         query=query,
-        grade=body.grade,
+        grade=grade,
         status="running",
         model=settings.ai_model,
-        result_json={"_card_context": ctx} if ctx else None,
+        result_json=meta or None,
     )
     db.add(job)
     db.commit()
     db.refresh(job)
     background.add_task(execute_job, job.id, SessionLocal)
-    return _out(job)
+    return job
 
 
 @router.get("/price-research")

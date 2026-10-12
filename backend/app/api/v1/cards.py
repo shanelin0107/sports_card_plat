@@ -7,7 +7,19 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models.entities import Brand, Card, CardSet, CollectionItem, CollectionItemPhoto, Player, SaleComp, Sport
+from app.models.entities import (
+    Brand,
+    Card,
+    CardSet,
+    CollectionItem,
+    CollectionItemPhoto,
+    NormalizedSale,
+    Player,
+    RawMarketListing,
+    SaleComp,
+    SourcePlatform,
+    Sport,
+)
 from app.schemas.cards import (
     CardDetailOut,
     CardMetadataOut,
@@ -347,3 +359,110 @@ def raw_vs_psa10(card_id: int, window: str = "90d", db: Session = Depends(get_db
         psa10_median=psa_med,
         grading_premium=round(psa_med / raw_med, 2) if raw_med and psa_med else None,
     )
+
+
+@router.get("/{card_id}/market-summary")
+def market_summary(
+    card_id: int,
+    grade: str | None = Query(default=None, description="raw | psa10 | psa9 | all"),
+    window: str = Query(default="30d", pattern="^(30d|90d|1y|all)$"),
+    db: Session = Depends(get_db),
+):
+    """Card Ladder-style view: every sale in the window, median, volume, change vs prior window."""
+    from datetime import datetime as _dt, timedelta
+
+    _load_card(db, card_id)
+    gkey = parse_grade_param(grade)
+    names = grade_company_names(db)
+    now = _dt.now(UTC)
+    days = {"30d": 30, "90d": 90, "1y": 365}.get(window)
+    start = now - timedelta(days=days) if days else None
+    prev_start = now - timedelta(days=2 * days) if days else None
+
+    stmt = (
+        select(
+            SaleComp.id,
+            SaleComp.sold_at,
+            SaleComp.total_price,
+            SaleComp.grade_company_id,
+            SaleComp.grade_value,
+            SourcePlatform.name,
+            RawMarketListing.listing_url_raw,
+            RawMarketListing.listing_title_raw,
+        )
+        .join(NormalizedSale, NormalizedSale.id == SaleComp.normalized_sale_id)
+        .join(RawMarketListing, RawMarketListing.id == NormalizedSale.raw_market_listing_id)
+        .join(SourcePlatform, SourcePlatform.id == RawMarketListing.source_platform_id)
+        .where(SaleComp.card_id == card_id)
+        .order_by(SaleComp.sold_at.asc())
+    )
+    if not gkey.any_grade:
+        stmt = stmt.where(SaleComp.grade_value.is_(None) if gkey.is_raw else SaleComp.grade_value == gkey.grade_value)
+    if prev_start:
+        stmt = stmt.where(SaleComp.sold_at >= prev_start)
+    rows = db.execute(stmt).all()
+
+    cur = [r for r in rows if start is None or r.sold_at >= start]
+    prev = [r for r in rows if start is not None and r.sold_at < start]
+    prices = [float(r.total_price) for r in cur]
+    prev_prices = [float(r.total_price) for r in prev]
+    med = round(float(median(prices)), 2) if prices else None
+    prev_med = round(float(median(prev_prices)), 2) if prev_prices else None
+
+    sales = []
+    window_prices: list[float] = []
+    for r in cur:
+        window_prices.append(float(r.total_price))
+        last5 = window_prices[-5:]
+        sales.append(
+            {
+                "id": r.id,
+                "sold_at": r.sold_at,
+                "date": r.sold_at.astimezone(UTC).date().isoformat(),
+                "price": float(r.total_price),
+                "grade_label": grade_label(GradeKey(r.grade_company_id, r.grade_value), names),
+                "source": r.name,
+                "url": r.listing_url_raw if (r.listing_url_raw or "").startswith("http") else None,
+                "title": r.listing_title_raw,
+                "rolling_median": round(float(median(last5)), 2),  # median of this + previous 4 sales
+            }
+        )
+    volume: dict[str, int] = defaultdict(int)
+    for srow in sales:
+        volume[srow["date"]] += 1
+
+    return {
+        "card_id": card_id,
+        "grade": "All grades" if gkey.any_grade else grade_label(gkey, names),
+        "window": window,
+        "median": med,
+        "average": round(mean(prices), 2) if prices else None,
+        "low": min(prices) if prices else None,
+        "high": max(prices) if prices else None,
+        "count": len(prices),
+        "prev_median": prev_med,
+        "prev_count": len(prev_prices),
+        "change_pct": round((med - prev_med) / prev_med * 100, 1) if med and prev_med else None,
+        "last_sale": sales[-1] if sales else None,
+        "sales": sales,
+        "volume": [{"date": d, "count": c} for d, c in sorted(volume.items())],
+        "window_start": start.date().isoformat() if start else (sales[0]["date"] if sales else None),
+        "window_end": now.date().isoformat(),
+    }
+
+
+@router.delete("/{card_id}/comps/{comp_id}")
+def delete_comp(card_id: int, comp_id: int, db: Session = Depends(get_db)):
+    """Remove a wrong sale from a card's history (the raw record is kept for traceability)."""
+    from app.models.entities import ListingCardMatch
+
+    comp = db.get(SaleComp, comp_id)
+    if comp is None or comp.card_id != card_id:
+        raise HTTPException(status_code=404, detail="Sale not found for this card")
+    match = db.scalars(select(ListingCardMatch).where(ListingCardMatch.normalized_sale_id == comp.normalized_sale_id)).first()
+    if match:
+        match.match_method = "owner_rejected"
+        match.is_primary = False
+    db.delete(comp)
+    db.commit()
+    return {"deleted": True}
