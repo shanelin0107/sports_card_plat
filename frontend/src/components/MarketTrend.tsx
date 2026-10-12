@@ -119,7 +119,10 @@ export function MarketTrend({ cardId, grade }: { cardId: number; grade: string }
           );
           if (cancelled) return;
           if (j.status === 'running') return pollJob(id);
-          if (j.status === 'failed') return setSyncNote(`AI search failed: ${j.error_message}`);
+          if (j.status === 'failed') {
+            setSyncing(false);
+            return setSyncNote(`AI search failed: ${j.error_message}`);
+          }
           const n = j.result?.auto_saved ?? 0;
           setSyncNote(n > 0 ? `AI found and added ${n} sale${n > 1 ? 's' : ''}.` : 'AI searched the web but found no exact, dated sales for this card.');
           setSyncing(false);
@@ -371,7 +374,7 @@ export function MarketTrend({ cardId, grade }: { cardId: number; grade: string }
         {data && data.sales.length > 0 && (
           <div>
             <p className="eyebrow mb-2">Sales in this window ({data.sales.length})</p>
-            <div className="overflow-x-auto rounded-md border border-line">
+            <div className="relative overflow-x-auto rounded-md border border-line">
               <table className="w-full min-w-[560px] border-collapse text-[12px]">
                 <tbody>
                   {[...data.sales].reverse().map((s) => (

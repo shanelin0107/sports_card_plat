@@ -10,7 +10,7 @@ from app.core.config import settings
 from app.db.session import SessionLocal, get_db
 from app.models.entities import AiPriceResearch, Brand, Card, CardParallel, CardSet, Player
 from app.services.ai_research import ai_enabled, execute_job
-from app.services.comps import CompError, create_confirmed_comp
+from app.services.comps import CompError, create_confirmed_comp, listing_key
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -71,6 +71,25 @@ def _card_context(db: Session, card_id: int) -> tuple[str, dict]:
     return query, ctx
 
 
+STALE_AFTER_MINUTES = 15  # a run takes 30-90 s; anything older died with a restart
+
+
+def expire_stale_jobs(db: Session) -> None:
+    """A job left "running" by a server restart would block that card's AI search forever."""
+    from datetime import timedelta
+
+    cutoff = datetime.now(UTC) - timedelta(minutes=STALE_AFTER_MINUTES)
+    stale = db.scalars(
+        select(AiPriceResearch).where(AiPriceResearch.status == "running", AiPriceResearch.created_at < cutoff)
+    ).all()
+    for job in stale:
+        job.status = "failed"
+        job.error_message = "Interrupted (the server restarted). Run it again."
+        job.completed_at = datetime.now(UTC)
+    if stale:
+        db.commit()
+
+
 @router.get("/status")
 def ai_status():
     return {"enabled": ai_enabled(), "model": settings.ai_model if ai_enabled() else None}
@@ -115,6 +134,7 @@ def start_job(db: Session, background: BackgroundTasks, *, query: str, card_id: 
 
 @router.get("/price-research")
 def list_research(card_id: int | None = None, limit: int = Query(default=10, ge=1, le=50), db: Session = Depends(get_db)):
+    expire_stale_jobs(db)
     stmt = select(AiPriceResearch).order_by(AiPriceResearch.created_at.desc()).limit(limit)
     if card_id is not None:
         stmt = stmt.where(AiPriceResearch.card_id == card_id)
@@ -123,6 +143,7 @@ def list_research(card_id: int | None = None, limit: int = Query(default=10, ge=
 
 @router.get("/price-research/{job_id}")
 def get_research(job_id: int, db: Session = Depends(get_db)):
+    expire_stale_jobs(db)
     job = db.get(AiPriceResearch, job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Research not found")
@@ -149,7 +170,7 @@ def save_comp(job_id: int, body: SaveCompIn, db: Session = Depends(get_db)):
         comp, created = create_confirmed_comp(
             db,
             card_id=card_id,
-            listing_id=f"ai-{job.id}-{body.index}",
+            listing_id=listing_key(item.get("url"), f"ai-{job.id}-{body.index}"),
             title=item.get("title", ""),
             url=item["url"],
             price=float(item["price"]),

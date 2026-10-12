@@ -10,12 +10,12 @@ from app.db.session import get_db
 from app.core.config import settings
 from app.models.entities import AiPriceResearch, Card, CardParallel, CardSet, MarketFetchLog, Player, SaleComp
 from app.services import compsapi, ebay
-from app.services.comps import CompError, create_confirmed_comp
+from app.services.comps import CompError, create_confirmed_comp, ebay_item_id, listing_key
 
 router = APIRouter(prefix="/market", tags=["market"])
 
 
-def card_target(db: Session, card_id: int, grade: str | None) -> tuple[str, dict]:
+def card_target(db: Session, card_id: int, grade: str | None, parallel_id: int | None = None) -> tuple[str, dict]:
     row = db.execute(
         select(Card, CardSet.name, Player.full_name)
         .join(CardSet, CardSet.id == Card.set_id)
@@ -25,9 +25,13 @@ def card_target(db: Session, card_id: int, grade: str | None) -> tuple[str, dict
     if not row:
         raise HTTPException(status_code=404, detail="Card not found")
     card, card_set, player = row
-    parallels = [p for (p,) in db.execute(select(CardParallel.parallel_name).where(CardParallel.card_id == card_id)).all()]
-    named = [p for p in parallels if p.lower() != "base"]
-    parallel = named[0] if len(named) == 1 else None
+    rows = db.execute(select(CardParallel.id, CardParallel.parallel_name).where(CardParallel.card_id == card_id)).all()
+    by_id = {pid: name for pid, name in rows}
+    named = [n for n in by_id.values() if n.lower() != "base"]
+    if parallel_id in by_id:  # the version the owner actually holds
+        parallel = None if by_id[parallel_id].lower() == "base" else by_id[parallel_id]
+    else:
+        parallel = named[0] if len(named) == 1 else None
     target = {
         "player": player,
         "year": card.year,
@@ -46,13 +50,22 @@ def card_target(db: Session, card_id: int, grade: str | None) -> tuple[str, dict
     return " ".join(parts), target
 
 
+def _parallel_of(db: Session, card_id: int, parallel_id: int) -> bool:
+    p = db.get(CardParallel, parallel_id)
+    return p is not None and p.card_id == card_id
+
+
 def _grade_text(g: str | None) -> str | None:
     if not g or g == "all":
         return None
     if g == "raw":
         return "Raw"
-    if g.lower().startswith("psa"):
-        return f"PSA {g[3:].strip()}"
+    import re
+
+    m = re.match(r"^\s*(psa|bgs|beckett|sgc|cgc)\s*(\d+(?:\.5)?)\s*$", g, re.I)
+    if m:
+        company = "BGS" if m.group(1).lower() == "beckett" else m.group(1).upper()
+        return f"{company} {m.group(2)}"
     return g
 
 
@@ -105,7 +118,7 @@ def save_sold(body: SaveSoldIn, db: Session = Depends(get_db)):
         comp, created = create_confirmed_comp(
             db,
             card_id=body.card_id,
-            listing_id=body.item_id,
+            listing_id=listing_key(body.url, body.item_id),
             title=body.title,
             url=body.url,
             price=body.price,
@@ -131,6 +144,7 @@ def sync_card(
     background: BackgroundTasks,
     grade: str | None = None,
     force: bool = False,
+    parallel_id: int | None = None,
     db: Session = Depends(get_db),
 ):
     """Pull eBay sold history for one card and auto-save exact matches as comps.
@@ -141,7 +155,7 @@ def sync_card(
     import time
 
     if compsapi.enabled():
-        return _sync_compsapi(db, card_id, grade, force)
+        return _sync_compsapi(db, card_id, grade, force, parallel_id)
     if not ebay.ebay_enabled():
         return _ai_fallback(db, background, card_id, grade, force) or {"status": "ebay_off", "added": 0}
     key = (card_id, grade)
@@ -165,7 +179,7 @@ def sync_card(
             _, created = create_confirmed_comp(
                 db,
                 card_id=card_id,
-                listing_id=s["item_id"],
+                listing_id=listing_key(s["url"], s["item_id"]),
                 title=s["title"],
                 url=s["url"],
                 price=s["price"],
@@ -182,7 +196,7 @@ def sync_card(
     return {"status": "synced", "added": added, "sold_found": len(data["sold"] or [])}
 
 
-def _sync_compsapi(db: Session, card_id: int, grade: str | None, force: bool) -> dict:
+def _sync_compsapi(db: Session, card_id: int, grade: str | None, force: bool, parallel_id: int | None = None) -> dict:
     """Pull sold history from CompsAPI and auto-save sales that match this exact card.
 
     Each call spends one request of the monthly quota, so a card+grade is fetched at most
@@ -200,7 +214,8 @@ def _sync_compsapi(db: Session, card_id: int, grade: str | None, force: bool) ->
             return {"status": "recent", "source": "compsapi", "added": 0, "fetched_at": last.fetched_at.isoformat()}
 
     gtext = _grade_text(grade)
-    query, target = card_target(db, card_id, None)  # grade goes in as a filter, not keywords
+    parallel_id = parallel_id if parallel_id and _parallel_of(db, card_id, parallel_id) else None
+    query, target = card_target(db, card_id, None, parallel_id)  # grade goes in as a filter, not keywords
     target["grade"] = gtext
     log = MarketFetchLog(card_id=card_id, grade=gkey, source="compsapi", status="ok")
     try:
@@ -232,6 +247,7 @@ def _sync_compsapi(db: Session, card_id: int, grade: str | None, force: bool) ->
                 source="eBay",
                 match_method="compsapi_auto",
                 payload=r,
+                card_parallel_id=parallel_id,
             )
             added += int(created)
         except CompError:
@@ -277,6 +293,9 @@ def _ai_fallback(db: Session, background: BackgroundTasks, card_id: int, grade: 
     if not ai_enabled():
         return None
     gtext = _grade_text(grade)
+    from app.api.v1.ai import expire_stale_jobs
+
+    expire_stale_jobs(db)
     running = db.scalars(
         select(AiPriceResearch).where(AiPriceResearch.card_id == card_id, AiPriceResearch.status == "running")
     ).first()
@@ -342,9 +361,6 @@ def sold_links(card_id: int, grade: str | None = None, db: Session = Depends(get
     }
 
 
-_EBAY_ITEM_RE = __import__("re").compile(r"ebay\.[a-z.]+/(?:itm/(?:[^/?#]+/)?|.*[?&]item=)(\d{9,14})", __import__("re").I)
-
-
 class ManualSaleIn(BaseModel):
     price: float = Field(gt=0, le=10_000_000)
     date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
@@ -353,6 +369,7 @@ class ManualSaleIn(BaseModel):
     url: str | None = Field(default=None, max_length=1000)
     title: str | None = Field(default=None, max_length=500)
     source: str | None = Field(default=None, max_length=50)
+    card_parallel_id: int | None = None
 
 
 @router.post("/sales/{card_id}", status_code=201)
@@ -368,8 +385,8 @@ def add_manual_sale(card_id: int, body: ManualSaleIn, db: Session = Depends(get_
     url = (body.url or "").strip()
     if url and not url.startswith(("https://", "http://")):
         raise HTTPException(status_code=422, detail="Link must start with https://")
-    m = _EBAY_ITEM_RE.search(url) if url else None
-    listing_id = f"ebay-{m.group(1)}" if m else f"manual-{uuid.uuid4().hex[:12]}"
+    m = ebay_item_id(url)
+    listing_id = listing_key(url, f"manual-{uuid.uuid4().hex[:12]}")
     total = round(body.price + (body.shipping or 0), 2)
     try:
         comp, created = create_confirmed_comp(
@@ -384,9 +401,11 @@ def add_manual_sale(card_id: int, body: ManualSaleIn, db: Session = Depends(get_
             source=body.source or ("eBay" if m else "Manual"),
             match_method="manual_entry",
             payload=body.model_dump(),
+            restore_removed=True,  # adding by hand is an explicit "yes, this one counts"
+            card_parallel_id=body.card_parallel_id if body.card_parallel_id and _parallel_of(db, card_id, body.card_parallel_id) else None,
         )
     except CompError as exc:
-        raise HTTPException(status_code=409 if "removed" in str(exc) else 422, detail=str(exc)) from exc
+        raise HTTPException(status_code=409 if "already" in str(exc) else 422, detail=str(exc)) from exc
     db.commit()
     if not created:
         raise HTTPException(status_code=409, detail="That eBay sale is already on this card")

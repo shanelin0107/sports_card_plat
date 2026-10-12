@@ -5,16 +5,13 @@ import { useEffect, useState } from 'react';
 
 import { api } from '@/lib/client-api';
 import { confidenceLabel, money, pct, signedMoney, tone } from '@/lib/format';
+import { gradeParam } from '@/lib/grade';
 import { holdingImage } from '@/lib/images';
 import type { CardDetail, Holding, SalesHistory } from '@/lib/types';
 
 import { CardThumb } from './CardThumb';
 import { PriceChart } from './PriceChart';
 import { Sparkline } from './Sparkline';
-
-function gradeParam(h: Holding) {
-  return h.grade_value ? `psa${h.grade_value}` : 'raw';
-}
 
 export function HoldingsBoard({ holdings }: { holdings: Holding[] }) {
   const ranked = [...holdings].sort((a, b) => (b.estimated_value ?? 0) - (a.estimated_value ?? 0));
@@ -35,7 +32,7 @@ export function HoldingsBoard({ holdings }: { holdings: Holding[] }) {
             No cards yet. <Link href="/search" className="text-link">Search eBay to add your first card →</Link>
           </p>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="relative overflow-x-auto">
             <table className="w-full min-w-[720px] border-collapse text-[13px]">
               <thead>
                 <tr>
@@ -112,7 +109,7 @@ function SelectedCard({ holding }: { holding: Holding }) {
   useEffect(() => {
     const g = gradeParam(holding);
     Promise.all([
-      api<CardDetail>(`/cards/${holding.card_id}?grade=${g}&window=90d`),
+      api<CardDetail>(`/cards/${holding.card_id}?grade=${g}&window=30d`),
       api<SalesHistory>(`/cards/${holding.card_id}/sales-history?grade=${g}&window=all`),
     ])
       .then(([d, h]) => {
@@ -151,7 +148,7 @@ function SelectedCard({ holding }: { holding: Holding }) {
         <div className="tile">
           <span className="text-muted">Comps</span>
           <br />
-          <b className="num text-[15px]">{v ? v.exact_comp_count + v.similar_comp_count : '—'}</b>
+          <b className="num text-[15px]">{v ? v.exact_comp_count : '—'}</b>
         </div>
         <div className="tile">
           <span className="text-muted">Confidence</span>
@@ -161,7 +158,7 @@ function SelectedCard({ holding }: { holding: Holding }) {
         <div className="tile">
           <span className="text-muted">Method</span>
           <br />
-          <b className="text-[13px]">{v ? (v.method === 'exact_recent_comps_median' ? 'Exact median' : v.method === 'no_data' ? 'No data' : 'Blended') : '—'}</b>
+          <b className="text-[13px]">{v ? (v.method === 'exact_recent_comps_median' ? 'Median' : v.method === 'no_data' ? 'No data' : 'Few sales') : '—'}</b>
         </div>
       </div>
       {v && (

@@ -4,8 +4,8 @@ Rules (in order):
 1. EXACT comps: same card, same grade (PSA 10 is never priced off PSA 9 or raw),
    same parallel when both sides know it. Use the requested window; if it has fewer
    than MIN_EXACT comps, widen to 1y and then all-time, lowering confidence.
-2. SIMILAR fallback: same player + brand + year + grade on other cards, blended in
-   when exact comps are thin.
+2. THIN: with only 1-2 exact sales, the estimate is their median at low confidence.
+   Other cards (other parallels/inserts of the same player) never set the price.
 3. Estimate = median; range = interquartile range (or min/max for < 4 comps).
 4. With 5+ comps, sales below 1/3 or above 3x the median are treated as outliers
    (usually a mismatched listing: wrong parallel, a lot, a slab) and left out.
@@ -31,7 +31,6 @@ FALLBACK_CHAIN = ["30d", "90d", "1y", "all"]
 MIN_EXACT = 3
 OUTLIER_RATIO = 3.0  # keep sales within [median / 3, median * 3]
 OUTLIER_MIN_SALES = 5  # with fewer sales there isn't enough to tell what's normal
-SIMILAR_TARGET = 6
 
 
 def normalize_window(window: str | None) -> str:
@@ -237,46 +236,28 @@ class ValuationEngine:
                 f"No {grade_label} sales recorded for this card yet. Add a sale to price it.",
             )
 
-        # Similar comps: same player/brand/year/grade, other cards, only to support thin exact comps.
+        # Only 1-2 sales of this card: price it from those alone, with low confidence.
+        # Sales of other cards (other parallels, base, inserts of the same player) are
+        # counted for context only; mixing them in let five $5 base sales price a $32 Lazer.
         peers = self.peer_ids.get((card.player_id, card.brand_id, card.year), set()) - {card.id}
-        similar: list[CompRow] = []
-        for pid in peers:
-            similar.extend(self.comps_for(ValuationKey(pid, key.grade), window_used))
-        similar.sort(key=lambda c: c.sold_at, reverse=True)
-        similar_prices = [c.total_price for c in similar]
-
-        blended = exact_prices + similar_prices[: max(0, SIMILAR_TARGET - len(exact_prices))]
-        if not blended:
-            return _empty(
-                "NO_COMPS",
-                f"No {grade_label} sales found for this card or close peers.",
-                exact=len(exact_prices),
-                similar=len(similar_prices),
-            )
-
-        low, high = _price_range(blended)
+        similar_count = sum(len(self.comps_for(ValuationKey(pid, key.grade), window_used)) for pid in peers)
+        low, high = _price_range(exact_prices)
         confidence = 0.25 + 0.1 * len(exact_prices)
         if window_used in ("1y", "all") and window not in ("1y", "all"):
             confidence -= 0.1
-        codes = ["THIN_EXACT_COMPS" if exact_prices else "NO_EXACT_COMPS", f"GRADE_{grade_label.upper().replace(' ', '_')}"]
-        if similar_prices:
-            codes.append("SIMILAR_CARDS_BLENDED")
-        expl = (
-            f"Only {len(exact_prices)} {grade_label} sale(s) of this card"
-            + (f"; blended with {len(blended) - len(exact_prices)} similar-card sales." if similar_prices else ".")
-        )
         return {
-            "estimated_price": round(float(median(blended)), 2),
+            "estimated_price": round(float(median(exact_prices)), 2),
             "low_estimate": low,
             "high_estimate": high,
             "confidence_score": round(max(min(confidence, 0.5), 0.15), 2),
             "exact_comp_count": len(exact_prices),
-            "similar_comp_count": len(similar_prices),
-            "reason_codes": codes + [f"WINDOW_{window_used.upper()}"] + reason_codes,
-            "explanation": expl,
+            "similar_comp_count": similar_count,
+            "reason_codes": ["THIN_EXACT_COMPS", f"GRADE_{grade_label.upper().replace(' ', '_')}", f"WINDOW_{window_used.upper()}"]
+            + reason_codes,
+            "explanation": f"Only {len(exact_prices)} {grade_label} sale(s) of this card ({window_used} window); low confidence.",
             "methodology": "low_liquidity_fallback",
             "window_used": window_used,
-            "last_sale_at": last_sale or (similar[0].sold_at if similar else None),
+            "last_sale_at": last_sale,
         }
 
 
@@ -305,8 +286,9 @@ def parse_grade_param(grade: str | None) -> GradeKey:
     if g == "raw":
         return GradeKey()
     company_id = None
-    for prefix, cid in (("psa", 1),):
+    for prefix, cid in (("psa", 1), ("bgs", None), ("beckett", None), ("sgc", None), ("cgc", None)):
         if g.startswith(prefix):
-            company_id = cid
+            company_id = cid  # only PSA has a fixed id; others match any company at that grade
             g = g[len(prefix) :]
+            break
     return GradeKey(grade_company_id=company_id, grade_value=g or None)

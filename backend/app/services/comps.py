@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from urllib.parse import urlsplit
 
 from sqlalchemy import select
@@ -20,6 +21,21 @@ from app.services.ingestion.parsing import parse_sold_at, parse_title
 
 class CompError(ValueError):
     pass
+
+
+_EBAY_ITEM_RE = re.compile(r"ebay\.[a-z.]+/(?:itm/(?:[^/?#]+/)?|.*[?&]item=)(\d{9,14})", re.I)
+
+
+def ebay_item_id(url: str | None) -> str | None:
+    m = _EBAY_ITEM_RE.search(url or "")
+    return m.group(1) if m else None
+
+
+def listing_key(url: str | None, fallback: str) -> str:
+    """One id per real sale: an eBay item is "ebay-<item number>" whichever way it arrived
+    (CompsAPI, a pasted link, AI research), so the same sale can't be counted twice."""
+    item = ebay_item_id(url)
+    return f"ebay-{item}" if item else fallback
 
 
 def _source_platform(db: Session, url: str, fallback: str) -> SourcePlatform:
@@ -46,8 +62,13 @@ def create_confirmed_comp(
     source: str,
     match_method: str,
     payload: dict,
+    restore_removed: bool = False,
+    card_parallel_id: int | None = None,
 ) -> tuple[SaleComp, bool]:
-    """Returns (comp, created). Idempotent on (source platform, listing_id)."""
+    """Returns (comp, created). Idempotent on (source platform, listing_id).
+
+    restore_removed: the owner is adding this sale by hand, so a sale they removed
+    earlier comes back (automatic imports never resurrect a removed sale)."""
     sold_at = parse_sold_at(date)
     if sold_at is None:
         raise CompError("This record has no sale date, so it can't be used as a comp")
@@ -62,10 +83,17 @@ def create_confirmed_comp(
         norm = db.scalars(select(NormalizedSale).where(NormalizedSale.raw_market_listing_id == existing.id)).first()
         comp = db.scalars(select(SaleComp).where(SaleComp.normalized_sale_id == norm.id)).first() if norm else None
         if comp:
+            if comp.card_id != card_id:
+                raise CompError("This sale is already saved on another card")
             return comp, False
         if norm is not None:
-            # The owner removed this sale earlier; don't bring it back automatically.
-            raise CompError("This sale was removed from the card earlier")
+            if not restore_removed:
+                # The owner removed this sale earlier; don't bring it back automatically.
+                raise CompError("This sale was removed from the card earlier")
+            for m in db.scalars(select(ListingCardMatch).where(ListingCardMatch.normalized_sale_id == norm.id)).all():
+                db.delete(m)
+            db.delete(norm)
+            db.flush()
 
     parsed = parse_title(title or "", grade)
     grade_value = None if (grade or "").strip().lower() in ("", "raw") else parsed.grade_value
@@ -111,6 +139,7 @@ def create_confirmed_comp(
         ListingCardMatch(
             normalized_sale_id=norm.id,
             card_id=card_id,
+            card_parallel_id=card_parallel_id,
             match_method=match_method,
             confidence_score=1.0,
             is_primary=True,
@@ -120,6 +149,7 @@ def create_confirmed_comp(
     comp = SaleComp(
         normalized_sale_id=norm.id,
         card_id=card_id,
+        card_parallel_id=card_parallel_id,
         grade_company_id=company_id,
         grade_value=grade_value,
         sold_at=sold_at,

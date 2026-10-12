@@ -15,7 +15,7 @@ export function RecentComps({ comps }: { comps: RecentComp[] }) {
       {comps.length === 0 ? (
         <p className="p-5 text-muted">No sales recorded yet. Run an ingest to pull sold listings.</p>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="relative overflow-x-auto">
           <table className="w-full min-w-[520px] border-collapse font-mono text-[12px]">
             <tbody>
               {comps.map((c) => (

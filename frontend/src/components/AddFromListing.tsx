@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/client-api';
 import { resizeForUpload } from '@/lib/images';
 import { money } from '@/lib/format';
+import { gradeParam } from '@/lib/grade';
 import type { Holding } from '@/lib/types';
 
 import type { SearchListing } from './EbaySearch';
@@ -97,12 +98,12 @@ export function AddFromListing({ listing, onClose }: { listing: SearchListing; o
       }
       // sales typed/pasted in this dialog
       if (validRows(sales).length) {
-        setSalesResult(await saveSales(h.card_id, sales));
+        setSalesResult(await saveSales(h.card_id, sales, h.card_parallel_id));
         saved = await api<Holding>(`/collection/items/${h.id}`);
       } else {
         // nothing entered: try to find sold data in the background
-        const g = h.grade_value ? `psa${h.grade_value}` : 'raw';
-        api(`/market/sync/${h.card_id}?grade=${g}`, { method: 'POST' }).catch(() => {});
+        const g = gradeParam(h);
+        api(`/market/sync/${h.card_id}?grade=${g}${h.card_parallel_id ? `&parallel_id=${h.card_parallel_id}` : ''}`, { method: 'POST' }).catch(() => {});
       }
       setDone(saved);
     } catch (e) {
@@ -154,7 +155,7 @@ export function AddFromListing({ listing, onClose }: { listing: SearchListing; o
               <p className="text-[13px] text-muted">No sales entered — looking for recent sales in the background. You can add them later on the card page.</p>
             )}
             <div className="flex flex-wrap gap-2">
-              <Link href={`/cards/${done.card_id}?grade=${done.grade_value ? `psa${done.grade_value}` : 'raw'}`} className="btn-primary text-[#06281A] hover:text-[#06281A]">
+              <Link href={`/cards/${done.card_id}?grade=${gradeParam(done)}`} className="btn-primary text-[#06281A] hover:text-[#06281A]">
                 Open card page
               </Link>
               <Link href="/collection" className="btn-ghost">

@@ -59,6 +59,8 @@ def search_tokens(q: str) -> list[str]:
     import re
 
     q = re.sub(r"\b((?:19|20)\d{2})\s*[-/]\s*\d{2,4}\b", r"\1", q.lower())
+    # Grade words pick the preview price, they aren't part of a card's name.
+    q = re.sub(r"\b(psa|bgs|sgc|cgc)\s*(10|[1-9](?:\.5)?)\b|\braw\b|\bungraded\b", " ", q)
     return [t for t in re.split(r"[\s#,]+", q) if t]
 
 
@@ -137,22 +139,29 @@ def search_cards(
     if not rows:
         return []
 
-    # If the query names a grade, price the preview at that grade.
-    tokens = q.lower().split()
-    preview_grade = GradeKey.any()
-    if "raw" in tokens:
-        preview_grade = GradeKey()
-    elif "psa" in tokens:
-        idx = tokens.index("psa")
-        if idx + 1 < len(tokens):
-            preview_grade = GradeKey(grade_company_id=1, grade_value=tokens[idx + 1])
+    # If the query names a grade ("raw", "psa 10", "psa10"), price the preview at that grade;
+    # otherwise at each card's most-traded grade, never a raw + slab mix.
+    import re
+
+    ql = q.lower()
+    asked: GradeKey | None = None
+    if re.search(r"\braw\b", ql):
+        asked = GradeKey()
+    elif m := re.search(r"\bpsa\s*(10|[1-9](?:\.5)?)\b", ql):
+        asked = GradeKey(grade_company_id=1, grade_value=m.group(1))
 
     engine = ValuationEngine(db, {card.id for card, *_ in rows})
     photos = _card_photos(db, {card.id for card, *_ in rows})
     results = []
     for card, brand_name, set_name, player_name in rows:
-        key = ValuationKey(card.id, preview_grade)
-        v = engine.value(key)
+        grade = asked
+        if grade is None:
+            counts: dict[str | None, int] = defaultdict(int)
+            for c in engine.comps.get(card.id, []):
+                counts[c.grade_value] += 1
+            top = max(counts.items(), key=lambda kv: kv[1])[0] if counts else None
+            grade = GradeKey(1 if top else None, top)
+        v = engine.value(ValuationKey(card.id, grade))
         results.append(
             CardSearchResultOut(
                 id=card.id,

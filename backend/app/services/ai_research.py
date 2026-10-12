@@ -268,7 +268,7 @@ def execute_job(job_id: int, session_factory) -> None:
 
 def _auto_save_sold(db: Session, job: AiPriceResearch, result: dict) -> int:
     """Save exact, dated, source-verified sold records as comps (used by background sync)."""
-    from app.services.comps import CompError, create_confirmed_comp
+    from app.services.comps import CompError, create_confirmed_comp, listing_key
 
     saved = 0
     for i, item in enumerate(result.get("sold") or []):
@@ -278,7 +278,7 @@ def _auto_save_sold(db: Session, job: AiPriceResearch, result: dict) -> int:
             comp, created = create_confirmed_comp(
                 db,
                 card_id=job.card_id,
-                listing_id=f"ai-{job.id}-{i}",
+                listing_id=listing_key(item.get("url"), f"ai-{job.id}-{i}"),
                 title=item.get("title", ""),
                 url=item["url"],
                 price=float(item["price"]),

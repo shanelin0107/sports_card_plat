@@ -89,7 +89,7 @@ export function validRows(rows: SaleRow[]) {
 }
 
 /** Save rows as sales on a card. Returns how many were saved and any errors. */
-export async function saveSales(cardId: number, rows: SaleRow[]): Promise<{ saved: number; errors: string[] }> {
+export async function saveSales(cardId: number, rows: SaleRow[], parallelId?: number | null): Promise<{ saved: number; errors: string[] }> {
   let saved = 0;
   const errors: string[] = [];
   for (const r of validRows(rows)) {
@@ -102,6 +102,7 @@ export async function saveSales(cardId: number, rows: SaleRow[]): Promise<{ save
           date: r.date,
           grade: r.grade,
           url: r.url.trim() || null,
+          card_parallel_id: parallelId ?? null,
         }),
       });
       saved += 1;
@@ -156,7 +157,7 @@ export function SalesGrid({
           </a>
         )}
       </div>
-      <div className="overflow-x-auto">
+      <div className="relative overflow-x-auto">
         <table className="w-full min-w-[640px] border-collapse text-[12px]">
           <thead>
             <tr className="text-left text-muted">

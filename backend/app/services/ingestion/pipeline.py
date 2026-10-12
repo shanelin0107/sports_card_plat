@@ -98,6 +98,8 @@ class IngestionService:
                     continue
                 if tracked_card_ids and card_id not in tracked_card_ids:
                     continue
+                if self._owner_rejected(norm):
+                    continue  # the owner removed this sale ("Wrong sale?"); never bring it back
                 match = self._upsert_match(norm, card_id, parallel_id, confidence, reasons)
                 run.matched_count += 1
                 if confidence < PROMOTE_THRESHOLD:
@@ -105,8 +107,8 @@ class IngestionService:
                     details = self._issue_details(raw, norm, confidence) | {"suggested_card_id": card_id}
                     self._add_issue(run_id, "low_confidence", norm.source_listing_id, norm.id, details)
                     continue
-                self._promote(norm, match)
-                run.promoted_count += 1
+                if self._promote(norm, match):  # count new sales only, not re-runs of known ones
+                    run.promoted_count += 1
 
             run.status = "completed"
             run.completed_at = datetime.now(UTC)
@@ -244,6 +246,10 @@ class IngestionService:
             norm.parsed_parallel = parallel[1]
         return card_id, parallel[0] if parallel else None, round(min(score, 1.0), 2), reasons
 
+    def _owner_rejected(self, norm: NormalizedSale) -> bool:
+        m = self.db.execute(select(ListingCardMatch).where(ListingCardMatch.normalized_sale_id == norm.id)).scalar_one_or_none()
+        return m is not None and m.match_method == "owner_rejected"
+
     def _upsert_match(self, norm, card_id, parallel_id, confidence, reasons) -> ListingCardMatch:
         match = self.db.execute(select(ListingCardMatch).where(ListingCardMatch.normalized_sale_id == norm.id)).scalar_one_or_none()
         if match is None:
@@ -257,8 +263,10 @@ class IngestionService:
         self.db.flush()
         return match
 
-    def _promote(self, norm: NormalizedSale, match: ListingCardMatch) -> None:
+    def _promote(self, norm: NormalizedSale, match: ListingCardMatch) -> bool:
+        """Create or refresh the comp. Returns True when the sale is new."""
         comp = self.db.execute(select(SaleComp).where(SaleComp.normalized_sale_id == norm.id)).scalar_one_or_none()
+        created = comp is None
         if comp is None:
             comp = SaleComp(normalized_sale_id=norm.id)
             self.db.add(comp)
@@ -272,6 +280,7 @@ class IngestionService:
         comp.total_price = norm.total_price
         comp.currency = norm.currency
         self.db.flush()
+        return created
 
     def _add_issue(self, run_id: int, issue_type: str, source_listing_id: str | None, normalized_sale_id: int | None, details: dict):
         # Don't pile up a duplicate open issue every time the same listing is re-ingested.

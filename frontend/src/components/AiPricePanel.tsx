@@ -246,7 +246,7 @@ function PriceTable({
       {items.length === 0 ? (
         <p className="text-[13px] text-muted">{empty}</p>
       ) : (
-        <div className="overflow-x-auto rounded-md border border-line">
+        <div className="relative overflow-x-auto rounded-md border border-line">
           <table className="w-full min-w-[640px] border-collapse text-[12px]">
             <tbody>
               {items.map((it, i) => (

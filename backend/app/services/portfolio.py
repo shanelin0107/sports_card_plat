@@ -135,7 +135,7 @@ def load_holdings(db: Session, item_ids: list[int] | None = None) -> list[Collec
                 last_sale_price=all_sales[0].total_price if all_sales else None,
                 last_sale_date=all_sales[0].sold_at.astimezone(UTC).date() if all_sales else None,
                 recent_sales=[{"price": c.total_price, "date": c.sold_at.astimezone(UTC).date().isoformat()} for c in all_sales[:5]],
-                sales_fetched_at=fetched.get((item.card_id, _gkey(gkey))),
+                sales_fetched_at=fetched.get((item.card_id, _gkey(gkey, names))),
             )
         )
     return out
@@ -215,8 +215,12 @@ def previous_unit_prices(db: Session, holdings: list[CollectionItemOut], before:
     return prev
 
 
-def _gkey(g: GradeKey) -> str:
-    """The grade key the sync endpoint logs under ("raw", "psa10", ...)."""
+def _gkey(g: GradeKey, names: dict[int, str]) -> str:
+    """The grade key the sync endpoint logs under ("raw", "psa10", "bgs9.5" …), the same
+    string the collection page sends (frontend lib/grade.ts gradeParam)."""
     if g.is_raw:
         return "raw"
-    return f"psa{g.grade_value}" if g.grade_value else "all"
+    if not g.grade_value:
+        return "all"
+    company = (names.get(g.grade_company_id or -1) or "PSA").lower()
+    return f"{company}{g.grade_value}"

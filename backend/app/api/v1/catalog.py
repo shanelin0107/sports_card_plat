@@ -65,6 +65,24 @@ def card_parallels(card_id: int, db: Session = Depends(get_db)):
     return [{"id": i, "parallel_name": p, "variation_name": v} for i, p, v in rows]
 
 
+def _legacy_card(db: Session, old_slug: str, parallel_name: str) -> Card | None:
+    """Cards created before parallels got their own card used a slug without the parallel.
+    Reuse such a card only when it is exactly this version: a base request matches a card
+    with no named parallel, a "Lazer" request matches a card whose only parallel is Lazer."""
+    card = db.scalars(select(Card).where(Card.slug == old_slug)).first()
+    if card is None:
+        return None
+    named = {
+        n.lower()
+        for (n,) in db.execute(select(CardParallel.parallel_name).where(CardParallel.card_id == card.id)).all()
+        if n.lower() != "base"
+    }
+    want = parallel_name.lower()
+    if (want == "base" and not named) or named == {want}:
+        return card
+    return None
+
+
 def upsert_card(db: Session, body: CardCreate):
     """Find or create the catalog card (and parallel) described by `body`. Caller commits."""
     sport = _get_or_create(db, Sport, {"name": body.sport.strip().title()})
@@ -79,8 +97,12 @@ def upsert_card(db: Session, body: CardCreate):
     number = body.card_number.strip().lstrip("#")
     parallel_name = body.parallel.strip() or "Base"
 
-    slug = _slug(body.year, set_name, player.full_name, number)
+    # A parallel is its own card: a #329 Lazer sells for a multiple of the #329 base,
+    # so their sales must never share a card. The slug always carries the parallel.
+    slug = _slug(body.year, set_name, player.full_name, number, parallel_name)
     card = db.scalars(select(Card).where(Card.slug == slug)).first()
+    if card is None:
+        card = _legacy_card(db, _slug(body.year, set_name, player.full_name, number), parallel_name)
     created = card is None
     if created:
         title = f"{body.year} {set_name} {player.full_name} #{number}" + (" RC" if body.rookie else "")

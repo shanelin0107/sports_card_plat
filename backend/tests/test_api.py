@@ -26,6 +26,7 @@ def test_ingestion_is_idempotent_and_review_queue(client):
     assert first["promoted_count"] == 2
     second = client.post("/api/v1/internal/ingestion/run").json()
     assert second["status"] == "completed"
+    assert second["promoted_count"] == 0  # nothing new the second time
 
     issues = client.get("/api/v1/internal/ingestion/issues").json()
     kinds = sorted(i["issue_type"] for i in issues)
@@ -182,3 +183,125 @@ def test_outlier_left_out_of_estimate_and_trend(client):
     assert ms["count"] == 5 and ms["outliers"] == 1 and ms["median"] == 25.5 and ms["high"] == 27
     assert [s["price"] for s in ms["sales"] if s["outlier"]] == [140.0]
     assert ms["trend"][-1]["median"] == 25.5
+
+
+def test_thin_card_is_not_priced_off_other_cards(client):
+    from datetime import date, timedelta
+
+    base = {"sport": "Football", "year": 2024, "brand": "Panini", "set_name": "Prizm", "player": "Thin Test"}
+    peer = client.post("/api/v1/catalog/cards", json={**base, "card_number": "1"}).json()["card_id"]
+    mine = client.post("/api/v1/catalog/cards", json={**base, "card_number": "2", "parallel": "Lazer"}).json()["card_id"]
+    d = (date.today() - timedelta(days=3)).isoformat()
+    for _ in range(5):
+        client.post(f"/api/v1/market/sales/{peer}", json={"price": 5, "date": d})
+    client.post(f"/api/v1/market/sales/{mine}", json={"price": 32, "date": d})
+    v = client.get(f"/api/v1/valuations/cards/{mine}", params={"grade": "raw"}).json()
+    assert v["estimated_price"] == 32.0 and v["exact_comp_count"] == 1
+    assert v["confidence_score"] <= 0.5
+
+
+def test_removed_sale_can_be_added_back_by_hand_but_not_by_sync(client):
+    from datetime import date, timedelta
+
+    base = {"sport": "Football", "year": 2024, "brand": "Panini", "set_name": "Prizm", "player": "Restore Test"}
+    a = client.post("/api/v1/catalog/cards", json={**base, "card_number": "1"}).json()["card_id"]
+    b = client.post("/api/v1/catalog/cards", json={**base, "card_number": "2"}).json()["card_id"]
+    d = (date.today() - timedelta(days=1)).isoformat()
+    sale = {"price": 40, "date": d, "url": "https://www.ebay.com/itm/555666777888"}
+    comp = client.post(f"/api/v1/market/sales/{a}", json=sale).json()["sale_comp_id"]
+    other = client.post(f"/api/v1/market/sales/{b}", json=sale)
+    assert other.status_code == 409 and "another card" in other.json()["detail"]
+    assert client.delete(f"/api/v1/cards/{a}/comps/{comp}").json() == {"deleted": True}
+    back = client.post(f"/api/v1/market/sales/{a}", json=sale)
+    assert back.status_code == 201
+    again = client.post(f"/api/v1/market/sales/{a}", json=sale)
+    assert again.status_code == 409 and "already" in again.json()["detail"]
+
+
+def test_search_preview_never_mixes_grades(client):
+    from datetime import date, timedelta
+
+    card = client.post("/api/v1/catalog/cards", json={"sport": "Football", "year": 2024, "brand": "Panini",
+                                                      "set_name": "Prizm", "player": "Preview Grade", "card_number": "5"}).json()["card_id"]
+    d = (date.today() - timedelta(days=1)).isoformat()
+    for p in (20, 22, 21):
+        client.post(f"/api/v1/market/sales/{card}", json={"price": p, "date": d})
+    for p in (200, 210):
+        client.post(f"/api/v1/market/sales/{card}", json={"price": p, "date": d, "grade": "PSA 10"})
+    hit = lambda q: next(r for r in client.get("/api/v1/cards/search", params={"q": q}).json() if r["id"] == card)
+    assert hit("preview grade")["valuation_preview"] == 21.0  # most-traded grade (raw)
+    assert hit("preview grade psa10")["valuation_preview"] == 205.0
+    assert hit("preview grade raw")["valuation_preview"] == 21.0
+
+
+def test_each_parallel_is_its_own_card(client):
+    base = {"sport": "Football", "year": 2024, "brand": "Panini", "set_name": "Prizm", "player": "Parallel Test", "card_number": "329"}
+    b = client.post("/api/v1/catalog/cards", json=base).json()["card_id"]
+    lz = client.post("/api/v1/catalog/cards", json={**base, "parallel": "Lazer Prizm"}).json()["card_id"]
+    sv = client.post("/api/v1/catalog/cards", json={**base, "parallel": "Silver Prizm"}).json()["card_id"]
+    assert len({b, lz, sv}) == 3
+    # asking again finds the same card
+    assert client.post("/api/v1/catalog/cards", json={**base, "parallel": "lazer prizm"}).json()["card_id"] == lz
+    assert client.post("/api/v1/catalog/cards", json=base).json()["card_id"] == b
+
+
+def test_legacy_card_without_parallel_in_slug_is_reused():
+    import os
+
+    if not os.environ.get("TEST_DATABASE_URL"):
+        import pytest
+
+        pytest.skip("needs DB")
+    from fastapi.testclient import TestClient
+    from sqlalchemy import text
+
+    from app.db.session import engine
+    from app.main import app
+
+    with engine.begin() as conn:
+        conn.execute(text("DROP SCHEMA public CASCADE; CREATE SCHEMA public;"))
+    with TestClient(app) as c:
+        base = {"sport": "Football", "year": 2024, "brand": "Panini", "set_name": "Prizm", "player": "Legacy Test", "card_number": "7"}
+        lz = c.post("/api/v1/catalog/cards", json={**base, "parallel": "Lazer"}).json()["card_id"]
+        with engine.begin() as conn:  # pretend it was created by the old code (slug without parallel)
+            conn.execute(text("UPDATE card SET slug = '2024-panini-prizm-legacy-test-7' WHERE id = :i"), {"i": lz})
+        assert c.post("/api/v1/catalog/cards", json={**base, "parallel": "Lazer"}).json()["card_id"] == lz
+        assert c.post("/api/v1/catalog/cards", json=base).json()["card_id"] != lz  # base is a different card
+
+
+def test_listing_key_is_one_id_per_ebay_sale():
+    from app.services.comps import listing_key
+
+    assert listing_key("https://www.ebay.com/itm/2024-prizm-maye/123456789012?hash=x", "ai-1-0") == "ebay-123456789012"
+    assert listing_key("https://www.ebay.com/itm/123456789012", "x") == "ebay-123456789012"
+    assert listing_key("https://130point.com/sales/abc", "ai-1-0") == "ai-1-0"
+
+
+def test_stuck_ai_job_is_expired(client):
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import text
+
+    from app.db.session import engine
+
+    with engine.begin() as conn:
+        jid = conn.execute(text("INSERT INTO ai_price_research (query, status, created_at) VALUES ('x', 'running', :t) RETURNING id"),
+                           {"t": datetime.now(UTC) - timedelta(hours=1)}).scalar()
+    j = client.get(f"/api/v1/ai/price-research/{jid}").json()
+    assert j["status"] == "failed" and "restarted" in j["error_message"]
+
+
+def test_reingest_does_not_resurrect_a_removed_sale(client):
+    from sqlalchemy import text
+
+    from app.db.session import engine
+
+    client.post("/api/v1/internal/ingestion/run")
+    with engine.connect() as conn:
+        comp_id, card_id, norm_id = conn.execute(text(
+            "SELECT sc.id, sc.card_id, sc.normalized_sale_id FROM sale_comp sc JOIN listing_card_match m "
+            "ON m.normalized_sale_id = sc.normalized_sale_id WHERE m.match_method = 'rule_based_v2' LIMIT 1")).one()
+    assert client.delete(f"/api/v1/cards/{card_id}/comps/{comp_id}").json() == {"deleted": True}
+    client.post("/api/v1/internal/ingestion/run")
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM sale_comp WHERE normalized_sale_id = :n"), {"n": norm_id}).scalar() == 0

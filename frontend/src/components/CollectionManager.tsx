@@ -5,6 +5,7 @@ import { Fragment, useEffect, useState } from 'react';
 
 import { api } from '@/lib/client-api';
 import { longDate, money, pct, shortDate, signedMoney, tone } from '@/lib/format';
+import { gradeParam, graderOf } from '@/lib/grade';
 import { guessCard } from '@/lib/guess-card';
 import { holdingImage, resizeForUpload } from '@/lib/images';
 import type { CardSearchResult, CompsApiStatus, Holding, SyncResult } from '@/lib/types';
@@ -15,7 +16,6 @@ import { EbayPhotoPicker } from './EbayPhotoPicker';
 import { SalesGrid, emptyRow, saveSales, validRows, type SaleRow } from './SalesGrid';
 import { NewCardForm } from './NewCardForm';
 
-const gradeParam = (h: Holding) => (h.grade_value ? `psa${h.grade_value}` : 'raw');
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 type Skipped = NonNullable<SyncResult['skipped']>[number] & { grade?: string; added?: boolean; busy?: boolean };
@@ -52,7 +52,7 @@ function describeSync(r: SyncResult): RowSync {
   }
 }
 
-const GRADES = ['raw', '10', '9', '8', '7', '6', '5', '4', '3', '2', '1'];
+const GRADES = ['raw', '10', '9.5', '9', '8.5', '8', '7.5', '7', '6', '5', '4', '3', '2', '1'];
 const PSA_ID = 1;
 
 type Draft = {
@@ -60,6 +60,9 @@ type Draft = {
   card_title: string;
   card_parallel_id: number | null;
   grade: string;
+  // Keep the holding's own grading company (BGS, SGC …); new holdings default to PSA.
+  grade_company_id: number | null;
+  grader: string;
   purchase_price: string;
   purchase_date: string;
   quantity: string;
@@ -76,7 +79,7 @@ const today = () => {
 };
 
 function blank(): Draft {
-  return { card_id: null, card_title: '', card_parallel_id: null, grade: 'raw', purchase_price: '', purchase_date: today(), quantity: '1', notes: '', image_url: '', current_photo: null, player: null };
+  return { card_id: null, card_title: '', card_parallel_id: null, grade: 'raw', grade_company_id: null, grader: 'PSA', purchase_price: '', purchase_date: today(), quantity: '1', notes: '', image_url: '', current_photo: null, player: null };
 }
 
 function fromHolding(h: Holding): Draft {
@@ -85,6 +88,8 @@ function fromHolding(h: Holding): Draft {
     card_title: h.title ?? `Card ${h.card_id}`,
     card_parallel_id: h.card_parallel_id,
     grade: h.grade_value ?? 'raw',
+    grade_company_id: h.grade_company_id,
+    grader: graderOf(h),
     purchase_price: String(h.purchase_price),
     purchase_date: h.purchase_date,
     quantity: String(h.quantity),
@@ -124,7 +129,8 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
   async function syncOne(h: Holding, force: boolean): Promise<SyncResult | null> {
     setRowSync((s) => ({ ...s, [h.id]: { busy: true } }));
     try {
-      const r = await api<SyncResult>(`/market/sync/${h.card_id}?grade=${gradeParam(h)}${force ? '&force=true' : ''}`, { method: 'POST' });
+      const par = h.card_parallel_id ? `&parallel_id=${h.card_parallel_id}` : '';
+      const r = await api<SyncResult>(`/market/sync/${h.card_id}?grade=${gradeParam(h)}${par}${force ? '&force=true' : ''}`, { method: 'POST' });
       setRowSync((s) => ({ ...s, [h.id]: { ...describeSync(r), skipped: r.skipped?.length ? r.skipped : undefined } }));
       return r;
     } catch (e) {
@@ -151,7 +157,7 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
     try {
       await api(`/market/sales/${h.card_id}`, {
         method: 'POST',
-        body: JSON.stringify({ price: k.total, date: k.date, grade: k.grade ?? 'Raw', url: k.url, title: k.title, source: 'eBay' }),
+        body: JSON.stringify({ price: k.total, date: k.date, grade: k.grade ?? 'Raw', url: k.url, title: k.title, source: 'eBay', card_parallel_id: h.card_parallel_id }),
       });
       mark({ busy: false, added: true });
       await reloadItems();
@@ -276,7 +282,7 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
         {items.length === 0 ? (
           <p className="p-5 text-muted">Nothing here yet — add your first card above.</p>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="relative overflow-x-auto">
             <table className="w-full min-w-[1120px] border-collapse text-[13px]">
               <thead>
                 <tr>
@@ -310,7 +316,7 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
                         <div className="flex items-center gap-3">
                           <CardThumb src={holdingImage(h)} player={h.player} />
                           <div>
-                            <Link href={`/cards/${h.card_id}?grade=${h.grade_value ? `psa${h.grade_value}` : 'raw'}`} className="text-ink hover:text-link">
+                            <Link href={`/cards/${h.card_id}?grade=${gradeParam(h)}`} className="text-ink hover:text-link">
                               <b>{h.player}</b>
                             </Link>
                             {h.rookie_flag && <span className="badge ml-1.5 bg-warn/15 text-warn">RC</span>}
@@ -484,9 +490,9 @@ function HoldingForm({
       card_id: d.card_id,
       card_parallel_id: d.card_parallel_id,
       is_graded: graded,
-      grade_company_id: graded ? PSA_ID : null,
+      grade_company_id: graded ? (d.grade_company_id ?? PSA_ID) : null,
       grade_value: graded ? d.grade : null,
-      condition: graded ? `PSA ${d.grade}` : 'Raw',
+      condition: graded ? `${d.grader} ${d.grade}` : 'Raw',
       purchase_price: Number(d.purchase_price),
       purchase_date: d.purchase_date,
       quantity: Number(d.quantity),
@@ -507,7 +513,7 @@ function HoldingForm({
         h = await api<Holding>(`/collection/items/${h.id}/photo`, { method: 'DELETE' });
       }
       if (validRows(sales).length) {
-        const r = await saveSales(h.card_id, sales);
+        const r = await saveSales(h.card_id, sales, h.card_parallel_id);
         if (r.errors.length) setErr(`Some sales weren’t saved: ${r.errors.join(' · ')}`);
         h = await api<Holding>(`/collection/items/${h.id}`);
       }
@@ -576,9 +582,9 @@ function HoldingForm({
               Grade
             </label>
             <select id="hf-grade" className="field" value={d.grade} onChange={(e) => set('grade', e.target.value)}>
-              {GRADES.map((g) => (
+              {[...new Set([...GRADES, d.grade])].map((g) => (
                 <option key={g} value={g}>
-                  {g === 'raw' ? 'Raw' : `PSA ${g}`}
+                  {g === 'raw' ? 'Raw' : `${d.grader} ${g}`}
                 </option>
               ))}
             </select>
@@ -661,7 +667,7 @@ function HoldingForm({
             <div className="w-full">
               <EbayPhotoPicker
                 cardId={d.card_id}
-                grade={d.grade === 'raw' ? 'raw' : `psa${d.grade}`}
+                grade={d.grade === 'raw' ? 'raw' : `${d.grader.toLowerCase()}${d.grade}`}
                 onClose={() => setPicking(false)}
                 onPick={(url) => {
                   set('image_url', url);

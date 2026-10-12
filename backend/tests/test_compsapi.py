@@ -178,3 +178,32 @@ def test_busy_api_everywhere_gives_a_clear_message(client, fake_api, monkeypatch
     # not marked as fetched, so the next open/↻ tries again
     r2 = client.post(f"/api/v1/market/sync/{card}", params={"grade": "raw"})
     assert r2.status_code == 502
+
+
+def test_sync_targets_the_holdings_parallel_on_a_mixed_legacy_card(client, fake_api):
+    from sqlalchemy import text
+
+    from app.db.session import engine
+
+    calls, _ = fake_api
+    base = {"sport": "Football", "year": 2024, "brand": "Panini", "set_name": "Prizm", "player": "Drake Maye", "card_number": "329"}
+    card = client.post("/api/v1/catalog/cards", json={**base, "parallel": "Lazer Prizm"}).json()
+    # old data: one card carrying two parallels
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO card_parallel (card_id, parallel_name, variation_name) VALUES (:c, 'Silver Prizm', 'Base')"),
+                     {"c": card["card_id"]})
+    r = client.post(f"/api/v1/market/sync/{card['card_id']}",
+                    params={"grade": "raw", "parallel_id": card["card_parallel_id"]}).json()
+    assert r["added"] == 2 and "Lazer" in calls[-1].url.params["q"]
+    with engine.connect() as conn:
+        tagged = conn.execute(text("SELECT count(*) FROM sale_comp WHERE card_id = :c AND card_parallel_id = :p"),
+                              {"c": card["card_id"], "p": card["card_parallel_id"]}).scalar()
+    assert tagged == 2
+
+
+def test_bgs_holding_syncs_as_bgs(client, fake_api):
+    calls, _ = fake_api
+    card, _ = _lazer_holding(client)
+    client.post(f"/api/v1/market/sync/{card}", params={"grade": "bgs9.5"})
+    sent = calls[-1].url.params
+    assert sent["graded"] == "true" and sent["grader"] == "BGS" and sent["grade"] == "9.5"
