@@ -11,6 +11,7 @@ import { FindSales } from './FindSales';
 type Sale = {
   id: number;
   date: string;
+  ts?: string;
   price: number;
   grade_label: string;
   source: string;
@@ -31,6 +32,8 @@ type Summary = {
   last_sale: Sale | null;
   sales: Sale[];
   volume: { date: string; count: number }[];
+  trend?: { date: string; median: number; n: number }[];
+  trend_days?: number;
   window_start: string | null;
   window_end: string;
 };
@@ -40,7 +43,35 @@ const H_PRICE = 220;
 const H_VOL = 56;
 const PAD = { l: 8, r: 56, t: 12, b: 22 };
 
+const DAY = 86400000;
 const day = (iso: string) => Date.parse(`${iso}T00:00:00Z`);
+/** Where a sale sits on the time axis: its real time, or mid-day when only the date is known. */
+const saleTime = (s: Sale) => {
+  if (!s.ts) return day(s.date) + DAY / 2;
+  const t = Date.parse(s.ts);
+  return t % DAY === 0 ? t + DAY / 2 : t;
+};
+
+/** Round gridline values ($10, $20, $30 …) covering lo..hi, about `target` of them. */
+function niceTicks(lo: number, hi: number, target = 4): number[] {
+  const span = Math.max(hi - lo, 1);
+  const raw = span / target;
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((st) => st >= raw) ?? 10 * mag;
+  const out: number[] = [];
+  const top = Math.ceil(hi / step - 1e-9) * step; // first gridline at or above the highest sale
+  for (let v = Math.floor(lo / step) * step; v <= top + step * 1e-9; v += step) out.push(Math.round(v * 100) / 100);
+  return out;
+}
+
+/** Date labels along the x axis: every day/week/month depending on the span. */
+function dateTicks(x0: number, x1: number): number[] {
+  const days = (x1 - x0) / DAY;
+  const step = [1, 2, 7, 14, 30, 61, 91, 182, 365].find((st) => days / st <= 6) ?? 365;
+  const out: number[] = [];
+  for (let t = x1; t >= x0 - 1; t -= step * DAY) out.unshift(t);
+  return out;
+}
 
 export function MarketTrend({ cardId, grade }: { cardId: number; grade: string }) {
   const router = useRouter();
@@ -142,20 +173,33 @@ export function MarketTrend({ cardId, grade }: { cardId: number; grade: string }
 
   const geo = useMemo(() => {
     if (!data || data.sales.length === 0) return null;
+    // Time axis runs from the start of the first day to the end of today.
     const x0 = data.window_start ? day(data.window_start) : day(data.sales[0].date);
-    const x1 = Math.max(day(data.window_end), x0 + 86400000);
+    const x1 = Math.max(day(data.window_end), x0) + DAY;
     const prices = data.sales.map((s) => s.price);
     const lo = Math.min(...prices);
     const hi = Math.max(...prices);
-    const padv = hi === lo ? hi * 0.1 || 1 : (hi - lo) * 0.12;
-    const y0 = Math.max(0, lo - padv);
-    const y1 = hi + padv;
-    const x = (iso: string) => PAD.l + ((day(iso) - x0) / (x1 - x0)) * (W - PAD.l - PAD.r);
+    const padv = hi === lo ? hi * 0.1 || 1 : (hi - lo) * 0.08;
+    const ticks = niceTicks(Math.max(0, lo - padv), hi + padv);
+    const y0 = Math.min(ticks[0], lo);
+    const y1 = Math.max(ticks[ticks.length - 1], hi);
+    const xt = (t: number) => PAD.l + ((t - x0) / (x1 - x0)) * (W - PAD.l - PAD.r);
+    const x = (iso: string) => xt(day(iso) + DAY / 2); // a calendar day's centre
     const y = (v: number) => PAD.t + (1 - (v - y0) / (y1 - y0)) * (H_PRICE - PAD.t - PAD.b);
     const maxVol = Math.max(...data.volume.map((v) => v.count), 1);
-    const barW = Math.max(3, Math.min(14, ((W - PAD.l - PAD.r) / ((x1 - x0) / 86400000)) * 0.7));
-    const ticks = [y1, (y0 + y1) / 2, y0];
-    return { x, y, maxVol, barW, ticks, x0, x1 };
+    const barW = Math.max(3, Math.min(14, ((W - PAD.l - PAD.r) / ((x1 - x0) / DAY)) * 0.7));
+    // Sales known only by date share one spot; fan them out a little inside their day.
+    const dayPx = (W - PAD.l - PAD.r) / ((x1 - x0) / DAY);
+    const sameDay: Record<string, Sale[]> = {};
+    for (const sl of data.sales) if (!sl.ts || Date.parse(sl.ts) % DAY === 0) (sameDay[sl.date] ??= []).push(sl);
+    const cx: Record<number, number> = {};
+    for (const sl of data.sales) {
+      const group = sameDay[sl.date];
+      const k = group ? group.indexOf(sl) : -1;
+      const gap = group && group.length > 1 ? Math.min(7, (dayPx * 0.8) / (group.length - 1)) : 0;
+      cx[sl.id] = xt(saleTime(sl)) + (k >= 0 ? (k - (group.length - 1) / 2) * gap : 0);
+    }
+    return { x, xt, y, cx, maxVol, barW, ticks, x0, x1, dates: dateTicks(x0, x1 - DAY) };
   }, [data, W]);
 
   return (
@@ -163,7 +207,9 @@ export function MarketTrend({ cardId, grade }: { cardId: number; grade: string }
       <div className="panel-head flex-wrap">
         <div>
           <h2 className="panel-title">Sales trend · {data?.grade ?? '…'}</h2>
-          <p className="text-[12px] text-muted">Every recorded sale. Line = rolling median of the last 5 sales. Bars = sales per day.</p>
+          <p className="text-[12px] text-muted">
+            Dots = every recorded sale. Line = median of the last {data?.trend_days ?? 7} days. Bars = sales per day.
+          </p>
         </div>
         <div role="tablist" aria-label="Window" className="flex gap-1">
           {WINDOWS.map((w) => (
@@ -230,19 +276,24 @@ export function MarketTrend({ cardId, grade }: { cardId: number; grade: string }
                 </g>
               ))}
               {data.median !== null && (
-                <line
-                  x1={PAD.l}
-                  x2={W - PAD.r}
-                  y1={geo.y(data.median)}
-                  y2={geo.y(data.median)}
-                  stroke="#F5B841"
-                  strokeDasharray="4 4"
-                  opacity="0.7"
-                />
+                <g>
+                  <line
+                    x1={PAD.l}
+                    x2={W - PAD.r}
+                    y1={geo.y(data.median)}
+                    y2={geo.y(data.median)}
+                    stroke="#F5B841"
+                    strokeDasharray="4 4"
+                    opacity="0.7"
+                  />
+                  <text x={PAD.l + 2} y={geo.y(data.median) - 4} fontSize="10" fill="#F5B841" fontFamily="JetBrains Mono">
+                    {`median ${money(data.median)}`}
+                  </text>
+                </g>
               )}
-              {data.sales.length > 1 && (
+              {(data.trend?.length ?? 0) > 1 && (
                 <polyline
-                  points={data.sales.map((s) => `${geo.x(s.date)},${geo.y(s.rolling_median)}`).join(' ')}
+                  points={data.trend!.map((t) => `${geo.x(t.date)},${geo.y(t.median)}`).join(' ')}
                   fill="none"
                   stroke="#3DDC97"
                   strokeWidth="2"
@@ -252,7 +303,7 @@ export function MarketTrend({ cardId, grade }: { cardId: number; grade: string }
               {data.sales.map((s) => (
                 <circle
                   key={s.id}
-                  cx={geo.x(s.date)}
+                  cx={geo.cx[s.id]}
                   cy={geo.y(s.price)}
                   r={hover?.id === s.id ? 6 : 4}
                   fill={hover?.id === s.id ? '#3DDC97' : '#0B0F14'}
@@ -276,12 +327,23 @@ export function MarketTrend({ cardId, grade }: { cardId: number; grade: string }
                   </rect>
                 );
               })}
-              <text x={PAD.l} y={H_PRICE - 4} fontSize="10" fill="#9FB3C8" fontFamily="JetBrains Mono">
-                {shortDate(new Date(geo.x0).toISOString().slice(0, 10))}
-              </text>
-              <text x={W - PAD.r} y={H_PRICE - 4} textAnchor="end" fontSize="10" fill="#9FB3C8" fontFamily="JetBrains Mono">
-                {shortDate(new Date(geo.x1).toISOString().slice(0, 10))}
-              </text>
+              {geo.dates.map((t, i) => {
+                const iso = new Date(t).toISOString().slice(0, 10);
+                const last = i === geo.dates.length - 1;
+                return (
+                  <text
+                    key={t}
+                    x={geo.x(iso)}
+                    y={H_PRICE - 4}
+                    textAnchor={last ? 'end' : 'middle'}
+                    fontSize="10"
+                    fill="#9FB3C8"
+                    fontFamily="JetBrains Mono"
+                  >
+                    {shortDate(iso)}
+                  </text>
+                );
+              })}
               <text x={W - PAD.r + 6} y={H_PRICE + H_VOL - 8} fontSize="10" fill="#9FB3C8" fontFamily="JetBrains Mono">
                 vol
               </text>
@@ -289,7 +351,7 @@ export function MarketTrend({ cardId, grade }: { cardId: number; grade: string }
             <div className="mt-1 min-h-[20px] font-mono text-[12px] text-muted" aria-live="polite">
               {hover
                 ? `${longDate(hover.date)} · ${money(hover.price)} · ${hover.grade_label} · ${hover.source}${hover.url ? ' · click to open' : ''}`
-                : 'Hover a dot for details · dashed line = window median'}
+                : 'Hover a dot for details · click to open the listing'}
             </div>
           </div>
         )}

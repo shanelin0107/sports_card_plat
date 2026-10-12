@@ -132,6 +132,7 @@ def fetch_sold(query: str, target: dict, grade: str | None, days: int | None = N
                 "shipping": round(ship, 2),
                 "total": round(price + ship, 2),
                 "date": str(it.get("last_sold") or "")[:10] or None,
+                "sold_at": str(it.get("last_sold") or "") or None,  # keeps the time of day
                 "url": it.get("url") or f"https://www.ebay.com/itm/{it['item_id']}",
                 "image": it.get("image"),
                 "best_offer": bool(it.get("best_offer")),

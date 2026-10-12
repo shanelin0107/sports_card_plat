@@ -227,7 +227,7 @@ def _sync_compsapi(db: Session, card_id: int, grade: str | None, force: bool) ->
                 title=r["title"],
                 url=r["url"],
                 price=r["total"],
-                date=r["date"],
+                date=r["sold_at"] or r["date"],
                 grade=r["grade"],
                 source="eBay",
                 match_method="compsapi_auto",

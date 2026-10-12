@@ -426,6 +426,7 @@ def market_summary(
                 "id": r.id,
                 "sold_at": r.sold_at,
                 "date": r.sold_at.astimezone(UTC).date().isoformat(),
+                "ts": r.sold_at.astimezone(UTC).isoformat(),
                 "price": float(r.total_price),
                 "grade_label": grade_label(GradeKey(r.grade_company_id, r.grade_value), names),
                 "source": r.name,
@@ -437,6 +438,17 @@ def market_summary(
     volume: dict[str, int] = defaultdict(int)
     for srow in sales:
         volume[srow["date"]] += 1
+
+    # Trend line: one point per day that had sales = median of every sale in the trailing
+    # N days. Time-based, so a burst of same-day sales doesn't make the line jump around.
+    trail = {"30d": 7, "90d": 14}.get(window, 30)
+    trend = []
+    for d in sorted(volume):
+        dd = _dt.fromisoformat(d).date()
+        win_prices = [
+            s["price"] for s in sales if 0 <= (dd - _dt.fromisoformat(s["date"]).date()).days < trail
+        ]
+        trend.append({"date": d, "median": round(float(median(win_prices)), 2), "n": len(win_prices)})
 
     return {
         "card_id": card_id,
@@ -453,6 +465,8 @@ def market_summary(
         "last_sale": sales[-1] if sales else None,
         "sales": sales,
         "volume": [{"date": d, "count": c} for d, c in sorted(volume.items())],
+        "trend": trend,
+        "trend_days": trail,
         "window_start": start.date().isoformat() if start else (sales[0]["date"] if sales else None),
         "window_end": now.date().isoformat(),
     }

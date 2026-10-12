@@ -152,3 +152,17 @@ def test_no_estimate_from_other_cards_until_this_card_sells(client):
     assert client.post(f"/api/v1/market/sales/{mine}", json={"price": 32, "date": "2026-10-04"}).status_code == 201
     v = client.get(f"/api/v1/valuations/cards/{mine}", params={"grade": "raw"}).json()
     assert v["estimated_price"] is not None and v["exact_comp_count"] == 1
+
+
+def test_trend_is_one_point_per_day(client):
+    from datetime import date, timedelta
+
+    card = client.post("/api/v1/catalog/cards", json={"sport": "Football", "year": 2024, "brand": "Panini",
+                                                      "set_name": "Prizm", "player": "Trend Test", "card_number": "7"}).json()["card_id"]
+    d0, d1 = (date.today() - timedelta(days=3)).isoformat(), (date.today() - timedelta(days=1)).isoformat()
+    for d, p in [(d0, 10), (d0, 30), (d0, 20), (d1, 50)]:
+        assert client.post(f"/api/v1/market/sales/{card}", json={"price": p, "date": d}).status_code == 201
+    ms = client.get(f"/api/v1/cards/{card}/market-summary", params={"grade": "raw", "window": "30d"}).json()
+    assert ms["trend_days"] == 7
+    assert ms["trend"] == [{"date": d0, "median": 20.0, "n": 3}, {"date": d1, "median": 25.0, "n": 4}]
+    assert all(s["ts"].startswith(s["date"]) for s in ms["sales"])
