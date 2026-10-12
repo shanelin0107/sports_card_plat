@@ -239,11 +239,15 @@ def _sync_compsapi(db: Session, card_id: int, grade: str | None, force: bool) ->
     log.found, log.added = len(data["items"]), added
     db.add(log)
     db.commit()
+    # Closest misses first (fewest reasons), newest first within each group, so a sale the
+    # matcher was too strict about is easy to spot and add by hand.
     skipped = [
-        {"title": r["title"], "total": r["total"], "date": r["date"], "url": r["url"], "why": r["mismatches"]}
+        {"title": r["title"], "total": r["total"], "date": r["date"], "url": r["url"], "grade": r["grade"], "why": r["mismatches"]}
         for r in data["items"]
-        if not r["exact_match"]
+        if not r["exact_match"] and r["date"]
     ]
+    skipped.sort(key=lambda x: x["date"], reverse=True)
+    skipped.sort(key=lambda x: len(x["why"]))
     return {
         "status": "synced",
         "source": "compsapi",
@@ -251,7 +255,7 @@ def _sync_compsapi(db: Session, card_id: int, grade: str | None, force: bool) ->
         "found": len(data["items"]),
         "matched": len(exact),
         "added": added,
-        "skipped": skipped[:10],
+        "skipped": skipped[:25],
     }
 
 

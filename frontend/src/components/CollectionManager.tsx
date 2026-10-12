@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 
 import { api } from '@/lib/client-api';
 import { longDate, money, pct, shortDate, signedMoney, tone } from '@/lib/format';
@@ -18,7 +18,18 @@ import { NewCardForm } from './NewCardForm';
 const gradeParam = (h: Holding) => (h.grade_value ? `psa${h.grade_value}` : 'raw');
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-type RowSync = { busy?: boolean; note?: string; bad?: boolean };
+type Skipped = NonNullable<SyncResult['skipped']>[number] & { grade?: string; added?: boolean; busy?: boolean };
+type RowSync = { busy?: boolean; note?: string; bad?: boolean; skipped?: Skipped[]; open?: boolean };
+
+const WHY: Record<string, string> = {
+  'card #': 'card # differs',
+  parallel: 'other parallel',
+  grade: 'other grade',
+  set: 'other set',
+  year: 'other year',
+  player: 'other player',
+  'not a single card': 'lot / break / reprint',
+};
 
 function describeSync(r: SyncResult): RowSync {
   switch (r.status) {
@@ -114,7 +125,7 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
     setRowSync((s) => ({ ...s, [h.id]: { busy: true } }));
     try {
       const r = await api<SyncResult>(`/market/sync/${h.card_id}?grade=${gradeParam(h)}${force ? '&force=true' : ''}`, { method: 'POST' });
-      setRowSync((s) => ({ ...s, [h.id]: describeSync(r) }));
+      setRowSync((s) => ({ ...s, [h.id]: { ...describeSync(r), skipped: r.skipped?.length ? r.skipped : undefined } }));
       return r;
     } catch (e) {
       setRowSync((s) => ({ ...s, [h.id]: { note: (e as Error).message, bad: true } }));
@@ -127,6 +138,29 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
     const r = await syncOne(h, true);
     if (r && r.added > 0) await reloadItems();
     refreshQuota();
+  }
+
+  /** Save a sale the matcher skipped (owner says it IS this card). */
+  async function addSkipped(h: Holding, k: Skipped) {
+    const mark = (patch: Partial<Skipped>) =>
+      setRowSync((s) => ({
+        ...s,
+        [h.id]: { ...s[h.id], skipped: s[h.id]?.skipped?.map((x) => (x.url === k.url ? { ...x, ...patch } : x)) },
+      }));
+    mark({ busy: true });
+    try {
+      await api(`/market/sales/${h.card_id}`, {
+        method: 'POST',
+        body: JSON.stringify({ price: k.total, date: k.date, grade: k.grade ?? 'Raw', url: k.url, title: k.title, source: 'eBay' }),
+      });
+      mark({ busy: false, added: true });
+      await reloadItems();
+    } catch (e) {
+      mark({ busy: false });
+      // 409 = already saved for this card
+      if (!(e as Error).message.toLowerCase().includes('already')) setError((e as Error).message);
+      else mark({ added: true });
+    }
   }
 
   /** Header button: every card once; cards checked in the last 24h are skipped for free. */
@@ -270,7 +304,8 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
                       </td>
                     </tr>
                   ) : (
-                    <tr key={h.id} className="border-t border-line">
+                    <Fragment key={h.id}>
+                    <tr className="border-t border-line">
                       <td className="td pl-5 font-sans">
                         <div className="flex items-center gap-3">
                           <CardThumb src={holdingImage(h)} player={h.player} />
@@ -335,6 +370,16 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
                             {rowSync[h.id]?.note}
                           </span>
                         )}
+                        {rowSync[h.id]?.skipped && (
+                          <button
+                            type="button"
+                            className="font-sans text-[11px] text-link hover:text-ink"
+                            aria-expanded={Boolean(rowSync[h.id]?.open)}
+                            onClick={() => setRowSync((s) => ({ ...s, [h.id]: { ...s[h.id], open: !s[h.id]?.open } }))}
+                          >
+                            {rowSync[h.id]?.open ? 'Hide skipped' : 'Review skipped →'}
+                          </button>
+                        )}
                       </td>
                       <td className={`td text-right ${tone(h.unrealized_pnl)}`}>
                         {signedMoney(h.unrealized_pnl)}
@@ -362,6 +407,35 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
                         )}
                       </td>
                     </tr>
+                    {rowSync[h.id]?.open && rowSync[h.id]?.skipped && (
+                      <tr className="bg-base/60">
+                        <td colSpan={11} className="px-5 pb-4 pt-2 font-sans">
+                          <p className="mb-2 text-[12px] text-muted">
+                            eBay sales that didn’t match this card exactly, closest first. If one <b>is</b> this card, press Add — it counts from then on.
+                          </p>
+                          <ul className="divide-y divide-line rounded-md border border-line">
+                            {rowSync[h.id]!.skipped!.map((k) => (
+                              <li key={k.url} className="flex flex-wrap items-center gap-3 px-3 py-2 text-[12px]">
+                                <span className="num w-16 text-right text-ink">{money(k.total)}</span>
+                                <span className="num w-20 text-muted">{k.date}</span>
+                                <a href={k.url} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1 truncate text-ink hover:text-link" title={k.title}>
+                                  {k.title}
+                                </a>
+                                <span className="text-warn">{k.why.map((w) => WHY[w] ?? w).join(', ')}</span>
+                                {k.added ? (
+                                  <span className="w-16 text-center text-up">Added</span>
+                                ) : (
+                                  <button type="button" className="btn-ghost min-h-8 w-16 px-2 text-[12px]" disabled={k.busy} onClick={() => addSkipped(h, k)}>
+                                    {k.busy ? '…' : 'Add'}
+                                  </button>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   ),
                 )}
               </tbody>

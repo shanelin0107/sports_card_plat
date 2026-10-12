@@ -115,3 +115,22 @@ def test_grade_params():
     assert compsapi.grade_params("Raw") == {"graded": "false"}
     assert compsapi.grade_params("PSA 10") == {"graded": "true", "grader": "PSA", "grade": "10"}
     assert compsapi.grade_params(None) == {}
+
+
+def test_insert_auto_with_hyphenated_number_matches():
+    from app.services.ebay import match_listing
+
+    t = {"player": "Dylan Harper", "year": 2025, "product": "Topps Chrome", "card_number": "TAIR-DH", "parallel": None, "grade": "Raw"}
+    for title in (
+        "2025-26 Topps Chrome Dylan Harper Rookie Auto #TAIR-DH Spurs RC",
+        "2025 Topps Chrome Basketball Dylan Harper TAIR DH Rookie Autograph",
+        "Dylan Harper 2025-26 Topps Chrome RC Auto TAIRDH San Antonio",
+    ):
+        assert match_listing(title, t, strict_base=True) == (True, []), title
+    assert match_listing("2025-26 Topps Chrome Dylan Harper Auto TAIR-DH Gold Refractor /50", t, True)[1] == ["parallel"]
+    assert match_listing("2025-26 Topps Chrome Dylan Harper Auto TAIR-DH PSA 10", t, True)[1] == ["grade"]
+    assert match_listing("2025-26 Topps Chrome Dylan Harper #TAIR-DHX Auto", t, True)[1] == ["card #"]
+    # numeric base cards keep the strict rules
+    b = {"player": "Drake Maye", "year": 2024, "product": "Prizm", "card_number": "329", "parallel": None, "grade": "Raw"}
+    assert match_listing("2024 Prizm Drake Maye #3299 RC", b, True)[1] == ["card #"]
+    assert match_listing("2024 Prizm Drake Maye #329 Auto", b, True)[1] == ["parallel"]

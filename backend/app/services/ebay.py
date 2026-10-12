@@ -138,6 +138,21 @@ _TEAMS = re.compile(r"\b(red sox|white sox|blue jays|red wings|blue jackets|gold
 _JUNK = re.compile(r"\b(lot|lots|reprint|custom|digital|break|case|box|pack|you pick|u pick|choose)\b")
 
 
+_SELF_WORDS = re.compile(r"\b(auto|autos|autograph|autographs|autographed|signed|signature|patch|relic|jersey|rpa)\b")
+
+
+def _number_in(num: str, t: str) -> bool:
+    """Card number in a normalised title. Hyphens/spaces inside the number are optional,
+    so TAIR-DH matches "TAIR-DH", "TAIR DH" and "TAIRDH"."""
+    parts = [re.escape(x) for x in re.split(r"[^a-z0-9]+", num) if x]
+    if not parts:
+        return True
+    core = r"[\s\-]?".join(parts)
+    if num.isdigit():  # plain numbers need a marker or spaces around them ("#329", " 329 ")
+        return bool(re.search(rf"(#\s*{core}\b|\bno\.?\s*{core}\b|\s{core}\s)", t))
+    return bool(re.search(rf"(?<![a-z0-9]){core}(?![a-z0-9])", t))
+
+
 def match_listing(title: str, target: dict | None, strict_base: bool = False) -> tuple[bool, list[str]]:
     """Heuristic: does this listing title describe the target card? Returns (exact, mismatches).
 
@@ -157,7 +172,7 @@ def match_listing(title: str, target: dict | None, strict_base: bool = False) ->
     if year and year not in t:
         misses.append("year")
     num = (target.get("card_number") or "").lower().lstrip("#")
-    if num and not re.search(rf"(#\s*{re.escape(num)}\b|\bno\.?\s*{re.escape(num)}\b|\s{re.escape(num)}\s)", t):
+    if num and not _number_in(num, t):
         misses.append("card #")
     parallel = (target.get("parallel") or "").lower()
     if parallel and parallel != "base" and not all(w in t for w in parallel.split()):
@@ -167,6 +182,10 @@ def match_listing(title: str, target: dict | None, strict_base: bool = False) ->
         rest = _TEAMS.sub(" ", t)
         for w in f"{target.get('player') or ''} {target.get('product') or ''}".lower().split():
             rest = rest.replace(f" {w} ", " ")
+        # Insert / autograph cards (letters in the number, e.g. TAIR-DH, RA-JD) are autos
+        # or memorabilia by nature, so "Auto" / "Patch" in the title is the card itself.
+        if not num.isdigit():
+            rest = _SELF_WORDS.sub(" ", rest)
         if _PARALLEL_WORDS.search(rest):
             misses.append("parallel")
     product = (target.get("product") or "").lower()

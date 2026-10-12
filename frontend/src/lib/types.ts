@@ -46,7 +46,7 @@ export type SyncResult = {
   matched?: number;
   message?: string;
   research_id?: number;
-  skipped?: { title: string; total: number; date: string | null; url: string; why: string[] }[];
+  skipped?: { title: string; total: number; date: string | null; url: string; grade?: string; why: string[] }[];
 };
 
 export type CompsApiStatus = {
