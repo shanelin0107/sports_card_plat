@@ -7,7 +7,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-sports_cards}
     ports:
-      - "5432:5432"
+      # Host port defaults to 5433 so it doesn't collide with a Postgres already
+      # running on the Mac. The backend talks to the db over the compose network.
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-sports_cards}"]
       interval: 5s
