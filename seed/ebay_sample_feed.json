@@ -25,5 +25,23 @@
     "condition_raw": "Raw",
     "price_raw": "$25.00",
     "shipping_raw": "$4.00"
+  },
+  {
+    "source_listing_id": "EBAY-FEED-004",
+    "sold_at_raw": "2026-03-26",
+    "listing_title_raw": "2023 Topps Chrome Julio Rodriguez #10 PSA 10",
+    "listing_url_raw": "https://example.com/feed4",
+    "condition_raw": "PSA 10",
+    "price_raw": "$120.00",
+    "shipping_raw": "$5.00"
+  },
+  {
+    "source_listing_id": "EBAY-FEED-005",
+    "sold_at_raw": "2026-03-25",
+    "listing_title_raw": "2023 Ohtani Angels card PSA 9",
+    "listing_url_raw": "https://example.com/feed5",
+    "condition_raw": "PSA 9",
+    "price_raw": "$70.00",
+    "shipping_raw": "$4.00"
   }
 ]

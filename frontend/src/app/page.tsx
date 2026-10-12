@@ -1,78 +1,90 @@
-import AboutMVP from '@/components/AboutMVP';
-import CollectionPanel from '@/components/CollectionPanel';
-import SearchPanel from '@/components/SearchPanel';
-import { fetchDashboardDistribution, fetchDashboardSummary, fetchRecentAdditions } from '@/lib/api';
+import { ErrorState } from '@/components/ErrorState';
+import { HoldingsBoard } from '@/components/HoldingsBoard';
+import { IngestionPanel } from '@/components/IngestionPanel';
+import { Kpi } from '@/components/Kpi';
+import { RecentComps } from '@/components/RecentComps';
+import { Ticker } from '@/components/Ticker';
+import { money, pct, signedMoney, tone } from '@/lib/format';
+import { apiTry } from '@/lib/server-api';
+import type { Holding, RecentComp, SourceHealth, Summary } from '@/lib/types';
 
-export default async function HomePage() {
-  const summary = await fetchDashboardSummary().catch(() => ({
-    total_items: 0,
-    cost_basis: 0,
-    estimated_value: 0,
-    unrealized_pnl: 0,
-  }));
-  const distribution = await fetchDashboardDistribution('brand').catch(() => []);
-  const recent = await fetchRecentAdditions().catch(() => []);
+export const dynamic = 'force-dynamic';
+
+export default async function DashboardPage() {
+  const [summary, holdings, comps, health] = await Promise.all([
+    apiTry<Summary>('/dashboard/summary'),
+    apiTry<Holding[]>('/collection/items'),
+    apiTry<RecentComp[]>('/dashboard/recent-comps?limit=8'),
+    apiTry<SourceHealth>('/internal/ingestion/source-health'),
+  ]);
+
+  if (!summary || !holdings) {
+    return (
+      <main className="mx-auto max-w-[1440px] px-4 py-6 sm:px-7">
+        <ErrorState />
+      </main>
+    );
+  }
+
+  const movers = [...summary.gainers, ...summary.losers];
 
   return (
-    <main className="mx-auto max-w-6xl space-y-6 p-6">
-      <section className="rounded-xl border border-slate-700 bg-slate-900/40 p-5">
-        <h1 className="text-2xl font-bold">Sports Card Intelligence MVP</h1>
-        <p className="text-sm text-slate-400">Portfolio demo: deterministic card valuation, comps, collection tracking, and dashboard analytics.</p>
-      </section>
+    <>
+      <Ticker holdings={holdings} health={health} />
+      <main className="mx-auto flex max-w-[1440px] flex-col gap-5 px-4 pb-10 pt-6 sm:px-7">
+        <h1 className="sr-only">Portfolio dashboard</h1>
+        <section aria-label="Portfolio summary" className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3">
+          <Kpi
+            label="Estimated value"
+            value={money(summary.estimated_value)}
+            sub={
+              summary.daily_change !== null ? (
+                <span className={tone(summary.daily_change)}>
+                  {signedMoney(summary.daily_change)} ({pct(summary.daily_change_pct)}) since last snapshot
+                </span>
+              ) : (
+                'Daily change starts after the first full day of snapshots'
+              )
+            }
+          />
+          <Kpi label="Cost basis" value={money(summary.cost_basis)} sub={`${summary.total_items} cards · ${summary.positions} positions`} />
+          <Kpi
+            label="Unrealized P&L"
+            value={
+              <>
+                {signedMoney(summary.unrealized_pnl)} <span className="text-[16px]">{pct(summary.unrealized_pnl_pct)}</span>
+              </>
+            }
+            valueClass={tone(summary.unrealized_pnl)}
+            sub={summary.unpriced_positions ? `${summary.unpriced_positions} position(s) have no comps yet` : 'All positions priced from sold comps'}
+          />
+          <Kpi
+            label="Holdings"
+            value={
+              <>
+                {summary.positions} <span className="text-[14px] text-muted">positions · {summary.graded_positions} graded</span>
+              </>
+            }
+            sub={
+              movers.length ? (
+                <span>
+                  Top mover: {movers[0].title.replace(/^\d{4} /, '').slice(0, 28)}{' '}
+                  <span className={tone(movers[0].change)}>{signedMoney(movers[0].change)}</span>
+                </span>
+              ) : (
+                `As of ${summary.as_of}`
+              )
+            }
+          />
+        </section>
 
-      <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Metric label="Collection Items" value={summary.total_items} />
-        <Metric label="Cost Basis" value={`$${summary.cost_basis}`} />
-        <Metric label="Estimated Value" value={`$${summary.estimated_value}`} />
-        <Metric label="Unrealized P&L" value={`$${summary.unrealized_pnl}`} />
-      </section>
+        <HoldingsBoard holdings={holdings} />
 
-      <AboutMVP />
-
-      <section className="rounded-xl border border-slate-700 bg-slate-900/40 p-5">
-        <h2 className="mb-2 text-lg font-semibold">Dashboard TODOs (Intentionally Deferred)</h2>
-        <p className="text-sm text-slate-400">{summary.todo_daily_change ?? 'TODO: add daily change.'}</p>
-        <p className="text-sm text-slate-400">{summary.todo_gainers_losers ?? 'TODO: add gainers/losers.'}</p>
-      </section>
-
-      <section className="grid gap-4 lg:grid-cols-2">
-        <SearchPanel />
-        <CollectionPanel />
-      </section>
-
-      <section className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-xl border border-slate-700 bg-slate-900/40 p-5">
-          <h2 className="mb-2 text-lg font-semibold">Holdings Distribution (Brand)</h2>
-          {distribution.length === 0 && <p className="text-sm text-slate-400">No distribution data yet.</p>}
-          <ul className="space-y-1 text-sm">
-            {distribution.map((d: any) => (
-              <li key={d.label}>
-                {d.label}: {d.count}
-              </li>
-            ))}
-          </ul>
+        <div className="flex flex-wrap gap-5">
+          <RecentComps comps={comps ?? []} />
+          <IngestionPanel health={health} />
         </div>
-        <div className="rounded-xl border border-slate-700 bg-slate-900/40 p-5">
-          <h2 className="mb-2 text-lg font-semibold">Recent Additions</h2>
-          {recent.length === 0 && <p className="text-sm text-slate-400">No recent additions yet.</p>}
-          <ul className="space-y-1 text-sm">
-            {recent.map((r: any) => (
-              <li key={r.collection_item_id}>
-                Card #{r.card_id} · ${r.purchase_price} · {r.purchase_date}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </section>
-    </main>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="rounded-xl border border-slate-700 bg-slate-900/40 p-4">
-      <p className="text-xs uppercase tracking-wide text-slate-400">{label}</p>
-      <p className="text-xl font-semibold">{value}</p>
-    </div>
+      </main>
+    </>
   );
 }

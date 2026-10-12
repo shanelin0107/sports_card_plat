@@ -3,16 +3,18 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.schemas.cards import ValuationOut
-from app.services.valuation import compute_card_valuation
+from app.services.valuation import compute_card_valuation, parse_grade_param
 
 router = APIRouter(prefix="/valuations", tags=["valuations"])
 
 
 @router.get("/cards/{card_id}", response_model=ValuationOut)
-def get_card_valuation(card_id: int, window: str = "90d", db: Session = Depends(get_db)):
-    result = compute_card_valuation(db=db, card_id=card_id, window=window)
+def get_card_valuation(card_id: int, window: str = "90d", grade: str | None = None, db: Session = Depends(get_db)):
+    gkey = parse_grade_param(grade)
+    result = compute_card_valuation(db=db, card_id=card_id, window=window, grade=gkey)
     return ValuationOut(
         card_id=card_id,
+        grade=gkey.label(),
         estimated_price=result["estimated_price"],
         low_estimate=result["low_estimate"],
         high_estimate=result["high_estimate"],
@@ -22,4 +24,6 @@ def get_card_valuation(card_id: int, window: str = "90d", db: Session = Depends(
         method=result["methodology"],
         reason_codes=result["reason_codes"],
         explanation=result["explanation"],
+        window_used=result.get("window_used"),
+        last_sale_at=result.get("last_sale_at"),
     )

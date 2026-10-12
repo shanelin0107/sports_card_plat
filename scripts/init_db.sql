@@ -213,3 +213,38 @@ CREATE TABLE IF NOT EXISTS ingestion_issue (
   details_json JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- ---------------------------------------------------------------------------
+-- v0.2 additive migrations (safe to re-run on an existing database)
+-- ---------------------------------------------------------------------------
+
+-- Review queue state for ingestion issues (open -> resolved | dismissed)
+ALTER TABLE ingestion_issue ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'open';
+ALTER TABLE ingestion_issue ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ;
+ALTER TABLE ingestion_issue ADD COLUMN IF NOT EXISTS resolution_card_id INT REFERENCES card(id);
+CREATE INDEX IF NOT EXISTS idx_ingestion_issue_status ON ingestion_issue(status, issue_type);
+
+-- One snapshot per holding grade per day, used for daily change / gainers & losers
+CREATE UNIQUE INDEX IF NOT EXISTS uq_valuation_snapshot_day
+  ON valuation_snapshot (card_id, COALESCE(grade_company_id, 0), COALESCE(grade_value, ''), as_of_date, window_days);
+
+CREATE INDEX IF NOT EXISTS idx_sale_comp_card_grade ON sale_comp(card_id, grade_value, sold_at DESC);
+CREATE INDEX IF NOT EXISTS idx_collection_item_owner ON collection_item(owner_profile_id);
+
+-- Seed rows are inserted with explicit ids, which leaves SERIAL sequences at 1 and
+-- makes the next INSERT collide with an existing primary key. Re-align every
+-- sequence with its table's max(id).
+DO $$
+DECLARE r RECORD;
+BEGIN
+  FOR r IN
+    SELECT c.relname AS tbl, s.relname AS seq
+    FROM pg_class s
+    JOIN pg_depend d ON d.objid = s.oid AND d.deptype = 'a'
+    JOIN pg_class c ON c.oid = d.refobjid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE s.relkind = 'S' AND n.nspname = current_schema()
+  LOOP
+    EXECUTE format('SELECT setval(%L, COALESCE((SELECT MAX(id) FROM %I), 0) + 1, false)', r.seq, r.tbl);
+  END LOOP;
+END $$;

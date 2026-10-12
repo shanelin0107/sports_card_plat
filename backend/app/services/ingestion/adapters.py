@@ -34,12 +34,15 @@ class EbayPublicAdapter:
 
     source_name = "eBay"
 
-    def __init__(self, fixture_path: str = "seed/ebay_sample_feed.json"):
-        self.fixture_path = Path(fixture_path)
+    def __init__(self, fixture_path: str | None = None):
+        from app.core.config import settings
+
+        self.fixture_path = Path(fixture_path or settings.ingestion_feed_path)
 
     def fetch_sold_listings(self, *, mode: str, tracked_card_ids: list[int] | None = None) -> list[RawListingRecord]:
         if not self.fixture_path.exists():
-            return []
+            # Fail loudly: a silently empty run looks like "no new sales" and hides misconfiguration.
+            raise FileNotFoundError(f"Ingestion feed not found: {self.fixture_path} (set INGESTION_FEED_PATH)")
         data = json.loads(self.fixture_path.read_text())
         records: list[RawListingRecord] = []
         for item in data:

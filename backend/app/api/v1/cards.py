@@ -1,43 +1,79 @@
 from collections import defaultdict
-from datetime import UTC, datetime, timedelta
+from datetime import UTC
 from statistics import mean, median
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models.entities import Brand, Card, CardSet, Player, SaleComp
+from app.models.entities import Brand, Card, CardSet, Player, SaleComp, Sport
 from app.schemas.cards import (
     CardDetailOut,
     CardMetadataOut,
     CardSearchResultOut,
     CardStatsOut,
     CompOut,
+    GradeOptionOut,
     RawVsPsaComparisonOut,
     SalesHistoryOut,
     SalesHistoryPricePoint,
     SalesHistoryVolumePoint,
     ValuationOut,
 )
-from app.services.valuation import compute_card_valuation
+from app.services.portfolio import grade_company_names, grade_label
+from app.services.valuation import (
+    GradeKey,
+    ValuationEngine,
+    ValuationKey,
+    normalize_window,
+    parse_grade_param,
+    window_cutoff,
+)
 
 router = APIRouter(prefix="/cards", tags=["cards"])
-WINDOW_MAP = {"30d": 30, "90d": 90, "1y": 365, "all": None}
 
 
-def _apply_window(stmt, window: str):
-    days = WINDOW_MAP.get(window.lower(), 90)
-    if days is None:
-        return stmt
-    cutoff = datetime.now(UTC) - timedelta(days=days)
-    return stmt.where(SaleComp.sold_at >= cutoff)
+def _escape_like(token: str) -> str:
+    return token.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _search_blob():
+    # Everything a collector might type: title, normalized text, brand, set, player, card #.
+    return func.lower(
+        func.concat_ws(" ", Card.title, Card.search_text_normalized, Brand.name, CardSet.name, Player.full_name, Card.card_number)
+    )
+
+
+def _valuation_out(card_id: int, v: dict, label: str) -> ValuationOut:
+    return ValuationOut(
+        card_id=card_id,
+        grade=label,
+        estimated_price=v["estimated_price"],
+        low_estimate=v["low_estimate"],
+        high_estimate=v["high_estimate"],
+        confidence_score=v["confidence_score"],
+        exact_comp_count=v["exact_comp_count"],
+        similar_comp_count=v["similar_comp_count"],
+        method=v["methodology"],
+        reason_codes=v["reason_codes"],
+        explanation=v["explanation"],
+        window_used=v.get("window_used"),
+        last_sale_at=v.get("last_sale_at"),
+    )
+
+
+def _grade_key_str(grade_value: str | None) -> str:
+    return "raw" if grade_value is None else f"psa{grade_value}"
 
 
 @router.get("/search", response_model=list[CardSearchResultOut])
 def search_cards(
-    q: str = Query(default=""),
+    q: str = Query(default="", max_length=200),
     year: int | None = None,
+    brand: str | None = None,
+    player: str | None = None,
+    limit: int = Query(default=25, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
     stmt = (
@@ -46,83 +82,103 @@ def search_cards(
         .join(CardSet, CardSet.id == Card.set_id)
         .join(Player, Player.id == Card.player_id)
     )
-
-    if q:
-        q_like = f"%{q}%"
-        stmt = stmt.where(
-            or_(
-                Card.title.ilike(q_like),
-                Card.search_text_normalized.ilike(f"%{q.lower()}%"),
-                Card.card_number.ilike(q_like),
-                Brand.name.ilike(q_like),
-                CardSet.name.ilike(q_like),
-                Player.full_name.ilike(q_like),
-            )
-        )
+    blob = _search_blob()
+    # Every token must appear somewhere ("2023 topps ohtani psa 10" -> 5 AND-ed tokens).
+    for token in q.lower().replace("#", " ").split():
+        stmt = stmt.where(blob.like(f"%{_escape_like(token)}%", escape="\\"))
     if year:
         stmt = stmt.where(Card.year == year)
+    if brand:
+        stmt = stmt.where(Brand.name.ilike(_escape_like(brand), escape="\\"))
+    if player:
+        stmt = stmt.where(Player.full_name.ilike(f"%{_escape_like(player)}%", escape="\\"))
 
-    rows = db.execute(stmt.limit(50)).all()
-    results: list[CardSearchResultOut] = []
-    for card, brand, card_set, player in rows:
-        valuation = compute_card_valuation(db, card.id)
+    rows = db.execute(stmt.order_by(Card.year.desc(), Card.title).limit(limit)).all()
+    if not rows:
+        return []
+
+    # If the query names a grade, price the preview at that grade.
+    tokens = q.lower().split()
+    preview_grade = GradeKey.any()
+    if "raw" in tokens:
+        preview_grade = GradeKey()
+    elif "psa" in tokens:
+        idx = tokens.index("psa")
+        if idx + 1 < len(tokens):
+            preview_grade = GradeKey(grade_company_id=1, grade_value=tokens[idx + 1])
+
+    engine = ValuationEngine(db, {card.id for card, *_ in rows})
+    results = []
+    for card, brand_name, set_name, player_name in rows:
+        key = ValuationKey(card.id, preview_grade)
+        v = engine.value(key)
         results.append(
             CardSearchResultOut(
                 id=card.id,
                 title=card.title,
                 year=card.year,
                 card_number=card.card_number,
-                brand=brand,
-                card_set=card_set,
-                player=player,
+                brand=brand_name,
+                card_set=set_name,
+                player=player_name,
+                rookie_flag=bool(card.rookie_flag),
                 default_image_url=card.default_image_url,
-                valuation_preview=valuation["estimated_price"],
+                valuation_preview=v["estimated_price"],
+                comp_count=len(engine.comps.get(card.id, [])),
             )
         )
     return results
 
 
-@router.get("/{card_id}", response_model=CardDetailOut)
-def card_detail(card_id: int, db: Session = Depends(get_db)):
-    row = (
-        db.execute(
-            select(Card, Brand.name, CardSet.name, Player.full_name)
-            .join(Brand, Brand.id == Card.brand_id)
-            .join(CardSet, CardSet.id == Card.set_id)
-            .join(Player, Player.id == Card.player_id)
-            .where(Card.id == card_id)
-        )
-        .all()
-    )
+def _load_card(db: Session, card_id: int):
+    row = db.execute(
+        select(Card, Brand.name, CardSet.name, Player.full_name, Sport.name)
+        .join(Brand, Brand.id == Card.brand_id)
+        .join(CardSet, CardSet.id == Card.set_id)
+        .join(Player, Player.id == Card.player_id)
+        .join(Sport, Sport.id == Card.sport_id)
+        .where(Card.id == card_id)
+    ).first()
     if not row:
         raise HTTPException(status_code=404, detail="Card not found")
+    return row
 
-    card, brand, card_set, player = row[0]
-    valuation_result = compute_card_valuation(db, card_id)
 
-    prices = [r[0] for r in db.execute(select(SaleComp.total_price).where(SaleComp.card_id == card_id)).all()]
-    stats = CardStatsOut(
-        card_id=card_id,
-        window="all",
-        count=len(prices),
-        average_price=(sum(prices) / len(prices)) if prices else None,
-        median_price=float(median(prices)) if prices else None,
-    )
+@router.get("/{card_id}", response_model=CardDetailOut)
+def card_detail(
+    card_id: int,
+    grade: str | None = Query(default=None, description="raw | psa10 | psa9 | all"),
+    window: str = "90d",
+    db: Session = Depends(get_db),
+):
+    card, brand, card_set, player, sport = _load_card(db, card_id)
+    window = normalize_window(window)
+    engine = ValuationEngine(db, {card_id})
+    comps = engine.comps.get(card_id, [])
+    names = grade_company_names(db)
 
-    raw_prices = [
-        row[0]
-        for row in db.execute(
-            select(SaleComp.total_price).where(
-                and_(SaleComp.card_id == card_id, SaleComp.grade_company_id.is_(None), SaleComp.grade_value.is_(None))
-            )
-        ).all()
+    counts: dict[str | None, int] = defaultdict(int)
+    for c in comps:
+        counts[c.grade_value] += 1
+    grade_opts = [
+        GradeOptionOut(key=_grade_key_str(gv), label=grade_label(GradeKey(1 if gv else None, gv), names), comp_count=n)
+        for gv, n in sorted(counts.items(), key=lambda kv: (kv[0] is not None, -kv[1]))
     ]
-    psa10_prices = [
-        row[0]
-        for row in db.execute(
-            select(SaleComp.total_price).where(and_(SaleComp.card_id == card_id, SaleComp.grade_value == "10"))
-        ).all()
-    ]
+
+    # Default grade: the most-traded one, so the headline number is never a grade mix.
+    if grade is None and comps:
+        top = max(counts.items(), key=lambda kv: kv[1])[0]
+        gkey = GradeKey(1 if top else None, top)
+    else:
+        gkey = parse_grade_param(grade)
+    label = grade_label(gkey, names) if not gkey.any_grade else "All grades"
+
+    v = engine.value(ValuationKey(card_id, gkey), window)
+    scoped = [c.total_price for c in engine.comps_for(ValuationKey(card_id, gkey), window)]
+    raw = [c.total_price for c in comps if c.grade_value is None]
+    psa10 = [c.total_price for c in comps if c.grade_value == "10"]
+    raw_med = float(median(raw)) if raw else None
+    psa_med = float(median(psa10)) if psa10 else None
 
     return CardDetailOut(
         metadata=CardMetadataOut(
@@ -134,108 +190,127 @@ def card_detail(card_id: int, db: Session = Depends(get_db)):
             brand=brand,
             card_set=card_set,
             player=player,
-            rookie_flag=card.rookie_flag,
-            autograph_flag=card.autograph_flag,
-            patch_flag=card.patch_flag,
+            sport=sport,
+            rookie_flag=bool(card.rookie_flag),
+            autograph_flag=bool(card.autograph_flag),
+            patch_flag=bool(card.patch_flag),
             default_image_url=card.default_image_url,
         ),
-        valuation=ValuationOut(
+        valuation=_valuation_out(card_id, v, label),
+        stats=CardStatsOut(
             card_id=card_id,
-            estimated_price=valuation_result["estimated_price"],
-            low_estimate=valuation_result["low_estimate"],
-            high_estimate=valuation_result["high_estimate"],
-            confidence_score=valuation_result["confidence_score"],
-            exact_comp_count=valuation_result["exact_comp_count"],
-            similar_comp_count=valuation_result["similar_comp_count"],
-            method=valuation_result["methodology"],
-            reason_codes=valuation_result["reason_codes"],
-            explanation=valuation_result["explanation"],
+            window=window,
+            count=len(scoped),
+            average_price=round(mean(scoped), 2) if scoped else None,
+            median_price=round(float(median(scoped)), 2) if scoped else None,
         ),
-        stats=stats,
         comparison=RawVsPsaComparisonOut(
             card_id=card_id,
             window="all",
-            raw_count=len(raw_prices),
-            psa10_count=len(psa10_prices),
-            raw_median=float(median(raw_prices)) if raw_prices else None,
-            psa10_median=float(median(psa10_prices)) if psa10_prices else None,
+            raw_count=len(raw),
+            psa10_count=len(psa10),
+            raw_median=raw_med,
+            psa10_median=psa_med,
+            grading_premium=round(psa_med / raw_med, 2) if raw_med and psa_med else None,
         ),
+        grades=grade_opts,
     )
 
 
 @router.get("/{card_id}/comps", response_model=list[CompOut])
-def card_comps(card_id: int, window: str = "90d", limit: int = 10, db: Session = Depends(get_db)):
-    stmt = select(SaleComp).where(SaleComp.card_id == card_id).order_by(SaleComp.sold_at.desc())
-    stmt = _apply_window(stmt, window)
-    comps = db.scalars(stmt.limit(limit)).all()
-    return [CompOut(id=c.id, sold_at=c.sold_at, total_price=c.total_price, grade_value=c.grade_value) for c in comps]
+def card_comps(
+    card_id: int,
+    window: str = "90d",
+    grade: str | None = None,
+    limit: int = Query(default=20, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    gkey = parse_grade_param(grade)
+    names = grade_company_names(db)
+    stmt = select(SaleComp.id, SaleComp.sold_at, SaleComp.total_price, SaleComp.grade_value, SaleComp.grade_company_id).where(
+        SaleComp.card_id == card_id
+    )
+    cutoff = window_cutoff(window)
+    if cutoff:
+        stmt = stmt.where(SaleComp.sold_at >= cutoff)
+    if not gkey.any_grade:
+        stmt = stmt.where(SaleComp.grade_value.is_(None) if gkey.is_raw else SaleComp.grade_value == gkey.grade_value)
+    rows = db.execute(stmt.order_by(SaleComp.sold_at.desc()).limit(limit)).all()
+    return [
+        CompOut(
+            id=r.id,
+            sold_at=r.sold_at,
+            total_price=float(r.total_price),
+            grade_value=r.grade_value,
+            grade_label=grade_label(GradeKey(r.grade_company_id, r.grade_value), names),
+        )
+        for r in rows
+    ]
 
 
 @router.get("/{card_id}/stats", response_model=CardStatsOut)
-def card_stats(card_id: int, window: str = "90d", db: Session = Depends(get_db)):
-    stmt = _apply_window(select(SaleComp.total_price).where(SaleComp.card_id == card_id), window)
-    prices = [row[0] for row in db.execute(stmt).all()]
+def card_stats(card_id: int, window: str = "90d", grade: str | None = None, db: Session = Depends(get_db)):
+    engine = ValuationEngine(db, {card_id})
+    prices = [c.total_price for c in engine.comps_for(ValuationKey(card_id, parse_grade_param(grade)), window)]
     return CardStatsOut(
         card_id=card_id,
-        window=window,
+        window=normalize_window(window),
         count=len(prices),
-        average_price=(sum(prices) / len(prices)) if prices else None,
-        median_price=float(median(prices)) if prices else None,
+        average_price=round(mean(prices), 2) if prices else None,
+        median_price=round(float(median(prices)), 2) if prices else None,
     )
 
 
 @router.get("/{card_id}/sales-history", response_model=SalesHistoryOut)
-def card_sales_history(card_id: int, window: str = "90d", bucket: str = "day", db: Session = Depends(get_db)):
-    stmt = _apply_window(select(SaleComp).where(SaleComp.card_id == card_id).order_by(SaleComp.sold_at.asc()), window)
-    comps = db.scalars(stmt).all()
+def card_sales_history(
+    card_id: int,
+    window: str = "90d",
+    bucket: str = Query(default="day", pattern="^(day|week|month)$"),
+    grade: str | None = None,
+    db: Session = Depends(get_db),
+):
+    gkey = parse_grade_param(grade)
+    engine = ValuationEngine(db, {card_id})
+    comps = sorted(engine.comps_for(ValuationKey(card_id, gkey), window), key=lambda c: c.sold_at)
 
     grouped: dict[str, list[float]] = defaultdict(list)
     for comp in comps:
-        sold = comp.sold_at.date()
+        sold = comp.sold_at.astimezone(UTC).date()  # bucket by UTC calendar day, not the DB session's zone
         if bucket == "month":
             key = sold.strftime("%Y-%m")
         elif bucket == "week":
-            key = f"{sold.isocalendar().year}-W{sold.isocalendar().week:02d}"
+            iso = sold.isocalendar()
+            key = f"{iso.year}-W{iso.week:02d}"
         else:
             key = sold.isoformat()
         grouped[key].append(comp.total_price)
 
-    ordered = sorted(grouped.items(), key=lambda x: x[0])
-    price_series = [
-        SalesHistoryPricePoint(date=k, avg_price=round(mean(v), 2), median_price=round(median(v), 2)) for k, v in ordered
-    ]
-    volume_series = [SalesHistoryVolumePoint(date=k, sale_count=len(v)) for k, v in ordered]
-
+    ordered = sorted(grouped.items())
     return SalesHistoryOut(
         card_id=card_id,
-        window=window,
+        window=normalize_window(window),
         bucket=bucket,
-        price_series=price_series,
-        volume_series=volume_series,
+        grade=gkey.label(),
+        price_series=[
+            SalesHistoryPricePoint(date=k, avg_price=round(mean(v), 2), median_price=round(median(v), 2)) for k, v in ordered
+        ],
+        volume_series=[SalesHistoryVolumePoint(date=k, sale_count=len(v)) for k, v in ordered],
     )
 
 
 @router.get("/{card_id}/comparison/raw-vs-psa10", response_model=RawVsPsaComparisonOut)
 def raw_vs_psa10(card_id: int, window: str = "90d", db: Session = Depends(get_db)):
-    raw_stmt = _apply_window(
-        select(SaleComp.total_price).where(
-            and_(SaleComp.card_id == card_id, SaleComp.grade_company_id.is_(None), SaleComp.grade_value.is_(None))
-        ),
-        window,
-    )
-    psa10_stmt = _apply_window(
-        select(SaleComp.total_price).where(and_(SaleComp.card_id == card_id, SaleComp.grade_value == "10")),
-        window,
-    )
-
-    raw_prices = [row[0] for row in db.execute(raw_stmt).all()]
-    psa10_prices = [row[0] for row in db.execute(psa10_stmt).all()]
-
+    engine = ValuationEngine(db, {card_id})
+    raw = [c.total_price for c in engine.comps_for(ValuationKey(card_id, GradeKey()), window)]
+    psa10 = [c.total_price for c in engine.comps_for(ValuationKey(card_id, GradeKey(1, "10")), window)]
+    raw_med = float(median(raw)) if raw else None
+    psa_med = float(median(psa10)) if psa10 else None
     return RawVsPsaComparisonOut(
         card_id=card_id,
-        window=window,
-        raw_count=len(raw_prices),
-        psa10_count=len(psa10_prices),
-        raw_median=float(median(raw_prices)) if raw_prices else None,
-        psa10_median=float(median(psa10_prices)) if psa10_prices else None,
+        window=normalize_window(window),
+        raw_count=len(raw),
+        psa10_count=len(psa10),
+        raw_median=raw_med,
+        psa10_median=psa_med,
+        grading_premium=round(psa_med / raw_med, 2) if raw_med and psa_med else None,
     )

@@ -11,8 +11,10 @@ class CardSearchResultOut(BaseModel):
     brand: str
     card_set: str
     player: str
+    rookie_flag: bool = False
     default_image_url: str | None
     valuation_preview: float | None
+    comp_count: int = 0
 
 
 class CardMetadataOut(BaseModel):
@@ -24,6 +26,7 @@ class CardMetadataOut(BaseModel):
     brand: str
     card_set: str
     player: str
+    sport: str | None = None
     rookie_flag: bool
     autograph_flag: bool
     patch_flag: bool
@@ -43,6 +46,7 @@ class CompOut(BaseModel):
     sold_at: datetime
     total_price: float
     grade_value: str | None
+    grade_label: str
 
 
 class SalesHistoryPricePoint(BaseModel):
@@ -60,6 +64,7 @@ class SalesHistoryOut(BaseModel):
     card_id: int
     window: str
     bucket: str
+    grade: str
     price_series: list[SalesHistoryPricePoint]
     volume_series: list[SalesHistoryVolumePoint]
 
@@ -71,10 +76,12 @@ class RawVsPsaComparisonOut(BaseModel):
     psa10_count: int
     raw_median: float | None
     psa10_median: float | None
+    grading_premium: float | None = None
 
 
 class ValuationOut(BaseModel):
     card_id: int
+    grade: str = "All grades"
     estimated_price: float | None
     low_estimate: float | None
     high_estimate: float | None
@@ -84,6 +91,14 @@ class ValuationOut(BaseModel):
     method: str
     reason_codes: list[str]
     explanation: str
+    window_used: str | None = None
+    last_sale_at: datetime | None = None
+
+
+class GradeOptionOut(BaseModel):
+    key: str  # "raw" | "psa10" | "psa9" ...
+    label: str
+    comp_count: int
 
 
 class CardDetailOut(BaseModel):
@@ -91,3 +106,4 @@ class CardDetailOut(BaseModel):
     valuation: ValuationOut
     stats: CardStatsOut
     comparison: RawVsPsaComparisonOut
+    grades: list[GradeOptionOut] = []

@@ -77,3 +77,19 @@ VALUES
   (1, 1, 1, 1, '10', true, 1, 150.00, '2025-11-10', 'PSA 10', 'Bought as long-term hold'),
   (1, 2, 2, 1, '10', true, 1, 390.00, '2026-01-20', 'PSA 10', 'High liquidity rookie')
 ON CONFLICT DO NOTHING;
+
+-- Keep SERIAL sequences ahead of the explicit ids above.
+DO $$
+DECLARE r RECORD;
+BEGIN
+  FOR r IN
+    SELECT c.relname AS tbl, s.relname AS seq
+    FROM pg_class s
+    JOIN pg_depend d ON d.objid = s.oid AND d.deptype = 'a'
+    JOIN pg_class c ON c.oid = d.refobjid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE s.relkind = 'S' AND n.nspname = current_schema()
+  LOOP
+    EXECUTE format('SELECT setval(%L, COALESCE((SELECT MAX(id) FROM %I), 0) + 1, false)', r.seq, r.tbl);
+  END LOOP;
+END $$;

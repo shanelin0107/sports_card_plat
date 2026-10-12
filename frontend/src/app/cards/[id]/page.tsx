@@ -1,92 +1,173 @@
 import Link from 'next/link';
+import { notFound } from 'next/navigation';
 
-import SalesHistoryChart from '@/components/SalesHistoryChart';
-import { fetchCardComps, fetchCardDetail, fetchCardHistory } from '@/lib/api';
+import { ErrorState } from '@/components/ErrorState';
+import { Kpi } from '@/components/Kpi';
+import { PriceChart } from '@/components/PriceChart';
+import { confidenceLabel, longDate, money } from '@/lib/format';
+import { ApiError, apiGet, apiTry } from '@/lib/server-api';
+import type { CardDetail, Comp, SalesHistory } from '@/lib/types';
+
+export const dynamic = 'force-dynamic';
+
+const WINDOWS = ['30d', '90d', '1y', 'all'];
 
 export default async function CardDetailPage({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ window?: string }>;
+  searchParams: Promise<{ window?: string; grade?: string }>;
 }) {
   const { id } = await params;
-  const { window = '90d' } = await searchParams;
+  const { window = '90d', grade } = await searchParams;
+  if (!/^\d+$/.test(id)) notFound();
 
-  const detail = await fetchCardDetail(id);
-  const comps = await fetchCardComps(id);
-  const history = await fetchCardHistory(id, window);
+  let detail: CardDetail;
+  try {
+    detail = await apiGet<CardDetail>(`/cards/${id}?window=${window}${grade ? `&grade=${grade}` : ''}`);
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) notFound();
+    return (
+      <main className="mx-auto max-w-[1440px] px-4 py-6 sm:px-7">
+        <ErrorState />
+      </main>
+    );
+  }
+
+  const activeGrade = grade ?? detail.grades.find((g) => g.label === detail.valuation.grade)?.key ?? 'all';
+  const gq = `grade=${activeGrade}`;
+  const [history, comps] = await Promise.all([
+    apiTry<SalesHistory>(`/cards/${id}/sales-history?window=${window}&${gq}`),
+    apiTry<Comp[]>(`/cards/${id}/comps?window=${window}&${gq}&limit=50`),
+  ]);
+  const m = detail.metadata;
+  const v = detail.valuation;
+  const conf = confidenceLabel(v.confidence_score);
+  const href = (g: string, w: string) => `/cards/${id}?grade=${g}&window=${w}`;
 
   return (
-    <main className="mx-auto max-w-5xl space-y-6 p-6">
-      <Link href="/" className="text-blue-300">
-        ← Back to Dashboard
+    <main className="mx-auto flex max-w-[1440px] flex-col gap-5 px-4 pb-10 pt-6 sm:px-7">
+      <Link href="/" className="text-[13px]">
+        ← Dashboard
       </Link>
 
-      <section className="rounded-xl border border-slate-700 bg-slate-900/40 p-5">
-        <h1 className="text-2xl font-bold">{detail.metadata.title}</h1>
-        <p className="text-slate-400">
-          {detail.metadata.year} · {detail.metadata.brand} · {detail.metadata.card_set} · #{detail.metadata.card_number}
-        </p>
-      </section>
-
-      <section className="grid gap-3 md:grid-cols-3">
-        <Metric label="Median" value={`$${detail.stats.median_price ?? 'N/A'}`} />
-        <Metric label="Average" value={`$${detail.stats.average_price ?? 'N/A'}`} />
-        <Metric label="Comps" value={detail.stats.count} />
-        <Metric label="Estimate" value={`$${detail.valuation.estimated_price ?? 'N/A'}`} />
-        <Metric label="Range" value={`$${detail.valuation.low_estimate ?? 'N/A'} - $${detail.valuation.high_estimate ?? 'N/A'}`} />
-        <Metric label="Confidence" value={detail.valuation.confidence_score} />
-      </section>
-
-      <section className="rounded-xl border border-slate-700 bg-slate-900/40 p-5">
-        <h2 className="mb-2 text-lg font-semibold">Valuation Method</h2>
-        <p className="text-sm text-slate-300">{detail.valuation.explanation}</p>
-        <p className="text-xs text-slate-400">Reason codes: {(detail.valuation.reason_codes || []).join(', ') || 'N/A'}</p>
-      </section>
-
-      <section className="rounded-xl border border-slate-700 bg-slate-900/40 p-5">
-        <h2 className="mb-2 text-lg font-semibold">Raw vs PSA 10</h2>
-        <p>
-          Raw median: ${detail.comparison.raw_median ?? 'N/A'} ({detail.comparison.raw_count} comps)
-        </p>
-        <p>
-          PSA 10 median: ${detail.comparison.psa10_median ?? 'N/A'} ({detail.comparison.psa10_count} comps)
-        </p>
-      </section>
-
-      <section className="space-y-2">
-        <h2 className="text-lg font-semibold">Sales History</h2>
-        <div className="flex gap-2 text-sm">
-          {['30d', '90d', '1y', 'all'].map((w) => (
-            <Link key={w} href={`/cards/${id}?window=${w}`} className="rounded bg-slate-800 px-3 py-1">
-              {w.toUpperCase()}
-            </Link>
-          ))}
+      <section className="panel flex flex-wrap items-end justify-between gap-4 p-5">
+        <div>
+          <p className="eyebrow">
+            {m.sport} · {m.brand}
+          </p>
+          <h1 className="mt-1 text-[22px] font-bold">
+            {m.player}{' '}
+            {m.rookie_flag && <span className="badge bg-warn/15 align-middle text-warn">RC</span>}
+            {m.autograph_flag && <span className="badge ml-1 bg-link/15 align-middle text-link">AUTO</span>}
+          </h1>
+          <p className="text-muted">
+            {m.year} {m.card_set} #{m.card_number}
+          </p>
         </div>
-        <SalesHistoryChart points={history.price_series} />
+        <div className="flex flex-col gap-2">
+          <nav aria-label="Grade" className="flex flex-wrap gap-1">
+            {[{ key: 'all', label: 'All grades', comp_count: detail.grades.reduce((s, g) => s + g.comp_count, 0) }, ...detail.grades].map((g) => (
+              <Link
+                key={g.key}
+                href={href(g.key, window)}
+                aria-current={activeGrade === g.key ? 'page' : undefined}
+                className={`flex min-h-11 items-center rounded-md px-3 font-mono text-[12px] ${activeGrade === g.key ? 'bg-raised text-ink' : ''}`}
+              >
+                {g.label} <span className="ml-1.5 text-muted">{g.comp_count}</span>
+              </Link>
+            ))}
+          </nav>
+          <nav aria-label="Window" className="flex flex-wrap gap-1">
+            {WINDOWS.map((w) => (
+              <Link
+                key={w}
+                href={href(activeGrade, w)}
+                aria-current={window === w ? 'page' : undefined}
+                className={`flex min-h-11 items-center rounded-md px-3 font-mono text-[12px] uppercase ${window === w ? 'bg-raised text-ink' : ''}`}
+              >
+                {w}
+              </Link>
+            ))}
+          </nav>
+        </div>
       </section>
 
-      <section className="rounded-xl border border-slate-700 bg-slate-900/40 p-5">
-        <h2 className="mb-2 text-lg font-semibold">Latest 10 Comps</h2>
-        <ul className="space-y-1 text-sm">
-          {comps.length === 0 && <li className="text-slate-400">No comps found for this window.</li>}
-          {comps.map((comp: any) => (
-            <li key={comp.id}>
-              {new Date(comp.sold_at).toISOString().slice(0, 10)} · ${comp.total_price} · Grade {comp.grade_value ?? 'Raw'}
-            </li>
-          ))}
-        </ul>
+      <section aria-label="Valuation" className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3">
+        <Kpi label={`Estimate · ${v.grade}`} value={money(v.estimated_price)} sub={v.last_sale_at ? `Last sale ${longDate(v.last_sale_at)}` : 'No sales yet'} />
+        <Kpi label="Range (IQR)" value={<span className="text-[22px]">{`${money(v.low_estimate, { whole: true })} – ${money(v.high_estimate, { whole: true })}`}</span>} />
+        <Kpi label="Confidence" value={conf.label} valueClass={conf.cls} sub={`${Math.round(v.confidence_score * 100)} / 100`} />
+        <Kpi label={`Comps · ${window}`} value={detail.stats.count} sub={`Median ${money(detail.stats.median_price)} · avg ${money(detail.stats.average_price)}`} />
+      </section>
+
+      <div className="flex flex-wrap items-start gap-5">
+        <section className="panel min-w-0 flex-[2_1_520px] p-5" aria-label="Price history">
+          <h2 className="panel-title mb-3">Sold price history · {v.grade}</h2>
+          <PriceChart
+            height={200}
+            label={`${v.grade} sold prices`}
+            points={(history?.price_series ?? []).map((p) => ({ date: p.date, value: p.median_price ?? 0 }))}
+          />
+        </section>
+        <section className="panel flex min-w-0 flex-[1_1_320px] flex-col gap-3 p-5" aria-label="How this was valued">
+          <h2 className="panel-title">How this was valued</h2>
+          <p className="text-[13px] leading-relaxed text-ink">{v.explanation}</p>
+          <div className="flex flex-wrap gap-1.5">
+            {v.reason_codes.map((r) => (
+              <span key={r} className="badge bg-raised font-mono text-muted">
+                {r}
+              </span>
+            ))}
+          </div>
+          <div className="mt-2 border-t border-line pt-3">
+            <p className="eyebrow mb-2">Raw vs PSA 10 (all time)</p>
+            <div className="grid grid-cols-3 gap-2 font-mono text-[12px]">
+              <div className="tile">
+                <span className="text-muted">Raw</span>
+                <br />
+                <b className="text-[15px]">{money(detail.comparison.raw_median, { whole: true })}</b>
+                <span className="block text-muted">{detail.comparison.raw_count} sales</span>
+              </div>
+              <div className="tile">
+                <span className="text-muted">PSA 10</span>
+                <br />
+                <b className="text-[15px]">{money(detail.comparison.psa10_median, { whole: true })}</b>
+                <span className="block text-muted">{detail.comparison.psa10_count} sales</span>
+              </div>
+              <div className="tile">
+                <span className="text-muted">Premium</span>
+                <br />
+                <b className="text-[15px]">{detail.comparison.grading_premium ? `${detail.comparison.grading_premium}×` : '—'}</b>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <section className="panel" aria-label="Sold comps">
+        <div className="panel-head">
+          <h2 className="panel-title">Sold comps</h2>
+          <span className="text-[12px] text-muted">price incl. shipping</span>
+        </div>
+        {!comps || comps.length === 0 ? (
+          <p className="p-5 text-muted">No sales in this window — try a wider window.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[420px] border-collapse font-mono text-[13px]">
+              <tbody>
+                {comps.map((c) => (
+                  <tr key={c.id} className="border-t border-line first:border-0">
+                    <td className="py-2.5 pl-5 pr-3 text-muted">{longDate(c.sold_at)}</td>
+                    <td className="px-3">{c.grade_label}</td>
+                    <td className="py-2.5 pl-3 pr-5 text-right">{money(c.total_price)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </main>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="rounded-xl border border-slate-700 bg-slate-900/40 p-4">
-      <p className="text-xs uppercase tracking-wide text-slate-400">{label}</p>
-      <p className="text-xl font-semibold">{value}</p>
-    </div>
   );
 }

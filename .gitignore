@@ -22,3 +22,6 @@ out/
 
 # Docker volumes
 postgres_data/
+
+# TypeScript incremental build
+*.tsbuildinfo

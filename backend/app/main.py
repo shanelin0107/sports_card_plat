@@ -1,22 +1,40 @@
-from fastapi import FastAPI
+import logging
+from contextlib import asynccontextmanager
+
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.api.v1.api import api_router
+from app.core.config import settings
+from app.core.security import require_api_key
+from app.db.bootstrap import bootstrap_database
+from app.db.session import engine
 
-app = FastAPI(title="Sports Card Platform API", version="0.1.0")
+logging.basicConfig(level=logging.INFO)
 
-# Local dev CORS for Next.js frontend
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    bootstrap_database()
+    yield
+
+
+app = FastAPI(title="Sports Card Platform API", version="0.2.0", lifespan=lifespan)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
-    allow_credentials=True,
+    allow_origins=settings.cors_origin_list,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-app.include_router(api_router, prefix="/api/v1")
+app.include_router(api_router, prefix="/api/v1", dependencies=[Depends(require_api_key)])
 
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok"}
+    with engine.connect() as conn:
+        conn.execute(text("SELECT 1"))
+    return {"status": "ok", "env": settings.app_env}

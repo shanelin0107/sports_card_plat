@@ -1,0 +1,22 @@
+# Render Blueprint for the FastAPI backend.
+# Render dashboard -> New -> Blueprint -> pick this repo.
+services:
+  - type: web
+    name: sports-card-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: prod
+      - key: DATABASE_URL # paste the Neon connection string
+        sync: false
+      - key: API_KEY # shared secret; copy the generated value into Vercel's API_KEY
+        generateValue: true
+      - key: SEED_DEMO_DATA # set to "false" if you don't want the demo cards in a fresh DB
+        value: "true"
+      - key: CORS_ORIGINS # browsers go through the Next.js proxy, so this can stay empty
+        value: ""
