@@ -134,3 +134,47 @@ def test_insert_auto_with_hyphenated_number_matches():
     b = {"player": "Drake Maye", "year": 2024, "product": "Prizm", "card_number": "329", "parallel": None, "grade": "Raw"}
     assert match_listing("2024 Prizm Drake Maye #3299 RC", b, True)[1] == ["card #"]
     assert match_listing("2024 Prizm Drake Maye #329 Auto", b, True)[1] == ["parallel"]
+
+
+def test_busy_api_steps_down_to_shorter_window(client, fake_api, monkeypatch):
+    calls, state = fake_api
+    monkeypatch.setattr(compsapi.time, "sleep", lambda s: None)
+    real = compsapi._client
+
+    def flaky():
+        c = real()
+        orig = c.get
+
+        def get(path, params=None):
+            calls.append(httpx.Request("GET", "https://x" + path, params=params))
+            if path == "/v1/sold" and int(params["days"]) > 90:
+                return httpx.Response(503, json={"ok": False, "error": "temporarily unavailable, please retry"})
+            return orig(path, params=params)
+
+        c.get = get
+        return c
+
+    monkeypatch.setattr(compsapi, "_client", flaky)
+    card, _ = _lazer_holding(client)
+    r = client.post(f"/api/v1/market/sync/{card}", params={"grade": "raw"}).json()
+    assert r["status"] == "synced" and r["added"] == 2
+    days = [int(c.url.params["days"]) for c in calls if c.url.path == "/v1/sold"]
+    assert days[:2] == [365, 365] and 90 in days  # retried once, then a shorter window
+
+
+def test_busy_api_everywhere_gives_a_clear_message(client, fake_api, monkeypatch):
+    monkeypatch.setattr(compsapi.time, "sleep", lambda s: None)
+    real = compsapi._client
+
+    def down():
+        c = real()
+        c.get = lambda path, params=None: httpx.Response(503, json={"ok": False, "error": "temporarily unavailable"})
+        return c
+
+    monkeypatch.setattr(compsapi, "_client", down)
+    card, _ = _lazer_holding(client)
+    r = client.post(f"/api/v1/market/sync/{card}", params={"grade": "raw"})
+    assert r.status_code == 502 and "no search was used" in r.json()["detail"]
+    # not marked as fetched, so the next open/↻ tries again
+    r2 = client.post(f"/api/v1/market/sync/{card}", params={"grade": "raw"})
+    assert r2.status_code == 502
