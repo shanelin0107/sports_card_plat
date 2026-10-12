@@ -120,3 +120,21 @@ def test_catalog_cleans_player_and_edit(client):
     e = client.patch(f"/api/v1/catalog/cards/{c['card_id']}", json={"parallel": "Orange Wave", "player": "Damian Lillard"}).json()
     assert e["parallel"] == "Orange Wave" and e["print_run"] == 60 and e["title"] == "2024 Panini Prizm Black Damian Lillard #91"
     assert client.get("/api/v1/cards/search", params={"q": "lillard orange wave"}).json()[0]["id"] == c["card_id"]
+
+
+def test_manual_sale_and_links(client):
+    links = client.get("/api/v1/market/sold-links/1", params={"grade": "psa10"}).json()
+    assert "PSA+10" in links["links"][0]["url"] and "LH_Sold=1" in links["links"][0]["url"]
+    r = client.post("/api/v1/market/sales/1", json={"price": 200, "shipping": 5, "date": "2026-10-01", "grade": "PSA 10",
+                                                    "url": "https://www.ebay.com/itm/2024-topps-ohtani/123456789012"})
+    assert r.status_code == 201 and r.json()["total_price"] == 205.0
+    dup = client.post("/api/v1/market/sales/1", json={"price": 200, "date": "2026-10-01", "grade": "PSA 10",
+                                                      "url": "https://www.ebay.com/itm/123456789012"})
+    assert dup.status_code == 409
+    assert client.post("/api/v1/market/sales/1", json={"price": 10, "date": "2999-01-01"}).status_code == 422
+    raw = client.post("/api/v1/market/sales/1", json={"price": 90, "date": "2026-10-02"})  # no link, raw
+    assert raw.status_code == 201
+    ms = client.get("/api/v1/cards/1/market-summary", params={"grade": "psa10", "window": "all"}).json()
+    assert any(s["price"] == 205.0 and s["source"] == "eBay" for s in ms["sales"])
+    ms_raw = client.get("/api/v1/cards/1/market-summary", params={"grade": "raw", "window": "all"}).json()
+    assert any(s["price"] == 90.0 and s["source"] == "Manual" for s in ms_raw["sales"])

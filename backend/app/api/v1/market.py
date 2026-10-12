@@ -226,3 +226,82 @@ def ebay_item(item_id: str):
         return ebay.get_item(item_id)
     except (ebay.EbayError, httpx.HTTPError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+# --------------------------------------------------------------------------- manual sales
+
+
+def _sold_query(card_id: int, grade: str | None, db: Session) -> str:
+    query, _ = card_target(db, card_id, _grade_text(grade))
+    return query
+
+
+@router.get("/sold-links/{card_id}")
+def sold_links(card_id: int, grade: str | None = None, db: Session = Depends(get_db)):
+    """Where to look up this card's sold prices by hand (eBay sold, Terapeak, 130point)."""
+    from urllib.parse import quote_plus
+
+    q = _sold_query(card_id, grade, db)
+    enc = quote_plus(q)
+    return {
+        "query": q,
+        "links": [
+            {"name": "eBay sold", "url": f"https://www.ebay.com/sch/i.html?_nkw={enc}&_sacat=261328&LH_Sold=1&LH_Complete=1&_sop=13",
+             "note": "Last 90 days on eBay.com (may ask you to sign in)"},
+            {"name": "Terapeak", "url": f"https://www.ebay.com/sh/research?marketplace=EBAY-US&keywords={enc}&tabName=SOLD&dayRange=90",
+             "note": "Seller Hub research, up to 3 years (needs your eBay seller login)"},
+            {"name": "130point", "url": "https://130point.com/sales/",
+             "note": "Shows real Best Offer prices; paste the search text"},
+        ],
+    }
+
+
+_EBAY_ITEM_RE = __import__("re").compile(r"ebay\.[a-z.]+/(?:itm/(?:[^/?#]+/)?|.*[?&]item=)(\d{9,14})", __import__("re").I)
+
+
+class ManualSaleIn(BaseModel):
+    price: float = Field(gt=0, le=10_000_000)
+    date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    grade: str | None = Field(default=None, max_length=20, description='"Raw" or e.g. "PSA 10"')
+    shipping: float | None = Field(default=None, ge=0)
+    url: str | None = Field(default=None, max_length=1000)
+    title: str | None = Field(default=None, max_length=500)
+    source: str | None = Field(default=None, max_length=50)
+
+
+@router.post("/sales/{card_id}", status_code=201)
+def add_manual_sale(card_id: int, body: ManualSaleIn, db: Session = Depends(get_db)):
+    """Owner-entered sale (e.g. seen on eBay sold / 130point). Becomes a comp immediately."""
+    import uuid
+    from datetime import date as _date
+
+    if db.get(Card, card_id) is None:
+        raise HTTPException(status_code=404, detail="Card not found")
+    if _date.fromisoformat(body.date) > _date.today():
+        raise HTTPException(status_code=422, detail="Sale date is in the future")
+    url = (body.url or "").strip()
+    if url and not url.startswith(("https://", "http://")):
+        raise HTTPException(status_code=422, detail="Link must start with https://")
+    m = _EBAY_ITEM_RE.search(url) if url else None
+    listing_id = f"ebay-{m.group(1)}" if m else f"manual-{uuid.uuid4().hex[:12]}"
+    total = round(body.price + (body.shipping or 0), 2)
+    try:
+        comp, created = create_confirmed_comp(
+            db,
+            card_id=card_id,
+            listing_id=listing_id,
+            title=body.title or "",
+            url=url,
+            price=total,
+            date=body.date,
+            grade=body.grade or "Raw",
+            source=body.source or ("eBay" if m else "Manual"),
+            match_method="manual_entry",
+            payload=body.model_dump(),
+        )
+    except CompError as exc:
+        raise HTTPException(status_code=409 if "removed" in str(exc) else 422, detail=str(exc)) from exc
+    db.commit()
+    if not created:
+        raise HTTPException(status_code=409, detail="That eBay sale is already on this card")
+    return {"sale_comp_id": comp.id, "total_price": total}

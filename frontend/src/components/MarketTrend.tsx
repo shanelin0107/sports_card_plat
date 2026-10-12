@@ -6,6 +6,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '@/lib/client-api';
 import { longDate, money, pct, shortDate, tone } from '@/lib/format';
 
+import { FindSales } from './FindSales';
+
 type Sale = {
   id: number;
   date: string;
@@ -193,9 +195,19 @@ export function MarketTrend({ cardId, grade }: { cardId: number; grade: string }
           </div>
         )}
 
+        <FindSales
+          cardId={cardId}
+          grade={grade}
+          onAdded={() => {
+            load();
+            router.refresh();
+          }}
+        />
+
         {data && !geo && (
           <div className="flex h-[160px] flex-col items-center justify-center gap-1 rounded-md bg-base text-center text-[13px] text-muted">
             <p>No {data.grade} sales in the last {data.window === 'all' ? 'record' : data.window}.</p>
+            <p className="text-[12px]">Open “eBay sold” above, then “+ Add a sale” for each one you want to count.</p>
             {data.window !== 'all' && (
               <button className="text-link hover:text-ink" onClick={() => setWin('all')}>
                 Show all time →
