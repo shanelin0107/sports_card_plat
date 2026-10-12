@@ -3,7 +3,7 @@ from datetime import UTC
 from statistics import mean, median
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -105,8 +105,30 @@ def _card_photos(db: Session, card_ids: set[int]) -> dict[int, tuple[int, str]]:
     return out
 
 
-def _grade_key_str(grade_value: str | None) -> str:
-    return "raw" if grade_value is None else f"psa{grade_value}"
+def _grade_key_str(grade_value: str | None, company: str = "PSA") -> str:
+    return "raw" if grade_value is None else f"{company.lower()}{grade_value}"
+
+
+ALWAYS_SHOWN = [("raw", "Raw"), ("psa10", "PSA 10"), ("psa9", "PSA 9")]
+
+
+def parse_grade(db: Session, grade: str | None) -> GradeKey:
+    """URL grade -> GradeKey with the grading company pinned (bgs10 never means PSA 10)."""
+    ids = {name.upper(): gid for gid, name in grade_company_names(db).items()}
+    return parse_grade_param(grade, ids)
+
+
+def _grade_filter(stmt, gkey: GradeKey):
+    """SQL version of GradeKey.matches(): grade value, plus company when one is pinned
+    (sales saved without a company still count, as older rows only stored the number)."""
+    if gkey.any_grade:
+        return stmt
+    if gkey.is_raw:
+        return stmt.where(SaleComp.grade_value.is_(None))
+    stmt = stmt.where(SaleComp.grade_value == gkey.grade_value)
+    if gkey.grade_company_id is not None:
+        stmt = stmt.where(or_(SaleComp.grade_company_id.is_(None), SaleComp.grade_company_id == gkey.grade_company_id))
+    return stmt
 
 
 @router.get("/search", response_model=list[CardSearchResultOut])
@@ -215,20 +237,28 @@ def card_detail(
         select(CardParallel).where(CardParallel.card_id == card_id, CardParallel.parallel_name != "Base").order_by(CardParallel.id)
     ).first()
 
-    counts: dict[str | None, int] = defaultdict(int)
+    # One tab per company + grade ("BGS 9.5" is not "PSA 9.5"); sales saved without a
+    # company count as PSA. Raw, PSA 10 and PSA 9 are always offered, even at 0 sales.
+    counts: dict[str, int] = defaultdict(int)
+    labels: dict[str, str] = {}
     for c in comps:
-        counts[c.grade_value] += 1
-    grade_opts = [
-        GradeOptionOut(key=_grade_key_str(gv), label=grade_label(GradeKey(1 if gv else None, gv), names), comp_count=n)
-        for gv, n in sorted(counts.items(), key=lambda kv: (kv[0] is not None, -kv[1]))
-    ]
+        company = names.get(c.grade_company_id or -1, "PSA") if c.grade_value else ""
+        k = _grade_key_str(c.grade_value, company)
+        counts[k] += 1
+        labels[k] = "Raw" if c.grade_value is None else f"{company} {c.grade_value}"
+    for k, lab in ALWAYS_SHOWN:
+        counts.setdefault(k, 0)
+        labels.setdefault(k, lab)
+    fixed = [k for k, _ in ALWAYS_SHOWN]
+    order = fixed + sorted((k for k in counts if k not in fixed), key=lambda k: -counts[k])
+    grade_opts = [GradeOptionOut(key=k, label=labels[k], comp_count=counts[k]) for k in order]
 
     # Default grade: the most-traded one, so the headline number is never a grade mix.
     if grade is None and comps:
-        top = max(counts.items(), key=lambda kv: kv[1])[0]
-        gkey = GradeKey(1 if top else None, top)
+        top = max((k for k in counts if counts[k]), key=lambda k: counts[k])
+        gkey = parse_grade(db, top)
     else:
-        gkey = parse_grade_param(grade)
+        gkey = parse_grade(db, grade)
     label = grade_label(gkey, names) if not gkey.any_grade else "All grades"
 
     v = engine.value(ValuationKey(card_id, gkey), window)
@@ -287,7 +317,7 @@ def card_comps(
     limit: int = Query(default=20, ge=1, le=200),
     db: Session = Depends(get_db),
 ):
-    gkey = parse_grade_param(grade)
+    gkey = parse_grade(db, grade)
     names = grade_company_names(db)
     stmt = select(SaleComp.id, SaleComp.sold_at, SaleComp.total_price, SaleComp.grade_value, SaleComp.grade_company_id).where(
         SaleComp.card_id == card_id
@@ -295,8 +325,7 @@ def card_comps(
     cutoff = window_cutoff(window)
     if cutoff:
         stmt = stmt.where(SaleComp.sold_at >= cutoff)
-    if not gkey.any_grade:
-        stmt = stmt.where(SaleComp.grade_value.is_(None) if gkey.is_raw else SaleComp.grade_value == gkey.grade_value)
+    stmt = _grade_filter(stmt, gkey)
     rows = db.execute(stmt.order_by(SaleComp.sold_at.desc()).limit(limit)).all()
     return [
         CompOut(
@@ -313,7 +342,7 @@ def card_comps(
 @router.get("/{card_id}/stats", response_model=CardStatsOut)
 def card_stats(card_id: int, window: str = "30d", grade: str | None = None, db: Session = Depends(get_db)):
     engine = ValuationEngine(db, {card_id})
-    prices = [c.total_price for c in engine.comps_for(ValuationKey(card_id, parse_grade_param(grade)), window)]
+    prices = [c.total_price for c in engine.comps_for(ValuationKey(card_id, parse_grade(db, grade)), window)]
     return CardStatsOut(
         card_id=card_id,
         window=normalize_window(window),
@@ -331,7 +360,7 @@ def card_sales_history(
     grade: str | None = None,
     db: Session = Depends(get_db),
 ):
-    gkey = parse_grade_param(grade)
+    gkey = parse_grade(db, grade)
     engine = ValuationEngine(db, {card_id})
     comps = sorted(engine.comps_for(ValuationKey(card_id, gkey), window), key=lambda c: c.sold_at)
 
@@ -389,7 +418,7 @@ def market_summary(
     from datetime import datetime as _dt, timedelta
 
     _load_card(db, card_id)
-    gkey = parse_grade_param(grade)
+    gkey = parse_grade(db, grade)
     names = grade_company_names(db)
     now = _dt.now(UTC)
     days = {"30d": 30, "90d": 90, "1y": 365}.get(window)
@@ -413,8 +442,7 @@ def market_summary(
         .where(SaleComp.card_id == card_id)
         .order_by(SaleComp.sold_at.asc())
     )
-    if not gkey.any_grade:
-        stmt = stmt.where(SaleComp.grade_value.is_(None) if gkey.is_raw else SaleComp.grade_value == gkey.grade_value)
+    stmt = _grade_filter(stmt, gkey)
     if prev_start:
         stmt = stmt.where(SaleComp.sold_at >= prev_start)
     rows = db.execute(stmt).all()

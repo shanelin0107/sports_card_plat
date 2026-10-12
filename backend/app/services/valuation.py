@@ -278,17 +278,20 @@ def grade_key_for_item(grade_company_id: int | None, grade_value: str | None, is
     return GradeKey(grade_company_id=grade_company_id, grade_value=grade_value)
 
 
-def parse_grade_param(grade: str | None) -> GradeKey:
-    """'raw' | 'psa10' | 'PSA 10' | '10' | None/'all'."""
+def parse_grade_param(grade: str | None, company_ids: dict[str, int] | None = None) -> GradeKey:
+    """'raw' | 'psa10' | 'bgs9.5' | 'PSA 10' | '10' | None/'all'.
+
+    company_ids ({"PSA": 1, "BGS": 3, …}) pins the grading company, so "bgs10" never
+    picks up PSA 10 sales. Without it only PSA is pinned (its id is fixed at 1)."""
     if not grade or grade.lower() in ("all", "any"):
         return GradeKey.any()
     g = grade.strip().lower().replace(" ", "")
     if g == "raw":
         return GradeKey()
     company_id = None
-    for prefix, cid in (("psa", 1), ("bgs", None), ("beckett", None), ("sgc", None), ("cgc", None)):
+    for prefix, name in (("psa", "PSA"), ("bgs", "BGS"), ("beckett", "BGS"), ("sgc", "SGC"), ("cgc", "CGC")):
         if g.startswith(prefix):
-            company_id = cid  # only PSA has a fixed id; others match any company at that grade
+            company_id = (company_ids or {}).get(name, 1 if name == "PSA" else None)
             g = g[len(prefix) :]
             break
     return GradeKey(grade_company_id=company_id, grade_value=g or None)

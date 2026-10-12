@@ -3,14 +3,15 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.schemas.cards import ValuationOut
-from app.services.valuation import compute_card_valuation, parse_grade_param
+from app.api.v1.cards import parse_grade
+from app.services.valuation import compute_card_valuation
 
 router = APIRouter(prefix="/valuations", tags=["valuations"])
 
 
 @router.get("/cards/{card_id}", response_model=ValuationOut)
 def get_card_valuation(card_id: int, window: str = "30d", grade: str | None = None, db: Session = Depends(get_db)):
-    gkey = parse_grade_param(grade)
+    gkey = parse_grade(db, grade)
     result = compute_card_valuation(db=db, card_id=card_id, window=window, grade=gkey)
     return ValuationOut(
         card_id=card_id,

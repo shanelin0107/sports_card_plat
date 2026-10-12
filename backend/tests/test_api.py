@@ -305,3 +305,25 @@ def test_reingest_does_not_resurrect_a_removed_sale(client):
     client.post("/api/v1/internal/ingestion/run")
     with engine.connect() as conn:
         assert conn.execute(text("SELECT count(*) FROM sale_comp WHERE normalized_sale_id = :n"), {"n": norm_id}).scalar() == 0
+
+
+def test_grade_tabs_split_by_company_and_always_offer_common_grades(client):
+    from datetime import date, timedelta
+
+    card = client.post("/api/v1/catalog/cards", json={"sport": "Football", "year": 2024, "brand": "Panini",
+                                                      "set_name": "Prizm", "player": "Grade Tabs", "card_number": "3"}).json()["card_id"]
+    d = (date.today() - timedelta(days=1)).isoformat()
+    client.post(f"/api/v1/market/sales/{card}", json={"price": 300, "date": d, "grade": "PSA 10"})
+    client.post(f"/api/v1/market/sales/{card}", json={"price": 250, "date": d, "grade": "PSA 10"})
+    client.post(f"/api/v1/market/sales/{card}", json={"price": 900, "date": d, "grade": "BGS 10"})
+    det = client.get(f"/api/v1/cards/{card}").json()
+    tabs = {g["key"]: (g["label"], g["comp_count"]) for g in det["grades"]}
+    assert [g["key"] for g in det["grades"]][:3] == ["raw", "psa10", "psa9"]
+    assert tabs["raw"] == ("Raw", 0) and tabs["psa9"] == ("PSA 9", 0)
+    assert tabs["psa10"] == ("PSA 10", 2) and tabs["bgs10"] == ("BGS 10", 1)
+    assert det["valuation"]["grade"] == "PSA 10"  # most-traded by default
+    # each tab only counts its own company
+    ms = lambda g: client.get(f"/api/v1/cards/{card}/market-summary", params={"grade": g}).json()
+    assert ms("psa10")["count"] == 2 and ms("psa10")["median"] == 275.0
+    assert ms("bgs10")["count"] == 1 and ms("bgs10")["median"] == 900.0
+    assert client.get(f"/api/v1/valuations/cards/{card}", params={"grade": "bgs10"}).json()["estimated_price"] == 900.0
