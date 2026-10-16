@@ -18,6 +18,7 @@ from app.models.entities import (
     GradeCompany,
     MarketFetchLog,
     Player,
+    Sport,
     ValuationSnapshot,
 )
 from app.schemas.collection import CollectionItemOut
@@ -41,8 +42,9 @@ def grade_label(key: GradeKey, names: dict[int, str]) -> str:
 
 def load_holdings(db: Session, item_ids: list[int] | None = None) -> list[CollectionItemOut]:
     stmt = (
-        select(CollectionItem, Card, Brand.name, CardSet.name, Player.full_name, CardParallel.parallel_name)
+        select(CollectionItem, Card, Brand.name, CardSet.name, Player.full_name, CardParallel.parallel_name, Sport.name)
         .join(Card, Card.id == CollectionItem.card_id)
+        .join(Sport, Sport.id == Card.sport_id)
         .join(Brand, Brand.id == Card.brand_id)
         .join(CardSet, CardSet.id == Card.set_id)
         .join(Player, Player.id == Card.player_id)
@@ -83,7 +85,7 @@ def load_holdings(db: Session, item_ids: list[int] | None = None) -> list[Collec
     ).all():
         fetched[(cid, g)] = ts
     out: list[CollectionItemOut] = []
-    for item, card, brand, card_set, player, parallel in rows:
+    for item, card, brand, card_set, player, parallel, sport in rows:
         gkey = grade_key_for_item(item.grade_company_id, item.grade_value, item.is_graded)
         vkey = ValuationKey(item.card_id, gkey, item.card_parallel_id)
         v = engine.value(vkey, "30d")  # widens to 90d / 1y / all when there are < 3 sales
@@ -113,6 +115,7 @@ def load_holdings(db: Session, item_ids: list[int] | None = None) -> list[Collec
                 created_at=item.created_at,
                 title=card.title,
                 player=player,
+                sport=sport,
                 year=card.year,
                 brand=brand,
                 card_set=card_set,

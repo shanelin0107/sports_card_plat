@@ -38,6 +38,7 @@ class CollectionItemOut(CollectionItemCreate):
     # Card identity, so the UI never has to show "Card #2"
     title: str | None = None
     player: str | None = None
+    sport: str | None = None
     year: int | None = None
     brand: str | None = None
     card_set: str | None = None

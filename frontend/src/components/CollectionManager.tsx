@@ -5,6 +5,7 @@ import { Fragment, useEffect, useState } from 'react';
 
 import { api } from '@/lib/client-api';
 import { longDate, money, pct, shortDate, signedMoney, tone } from '@/lib/format';
+import { DEFAULT_VIEW, applyFilters, groupItems, isFiltered, sortItems, totals, viewToQuery, type View } from '@/lib/collection-view';
 import { gradeParam, graderOf } from '@/lib/grade';
 import { guessCard } from '@/lib/guess-card';
 import { holdingImage, resizeForUpload } from '@/lib/images';
@@ -12,6 +13,7 @@ import type { CardSearchResult, CompsApiStatus, Holding, SyncResult } from '@/li
 
 import { CardPicker } from './CardPicker';
 import { CardThumb } from './CardThumb';
+import { CollectionToolbar } from './CollectionToolbar';
 import { EbayPhotoPicker } from './EbayPhotoPicker';
 import { SalesGrid, emptyRow, saveSales, validRows, type SaleRow } from './SalesGrid';
 import { NewCardForm } from './NewCardForm';
@@ -100,8 +102,29 @@ function fromHolding(h: Holding): Draft {
   };
 }
 
-export function CollectionManager({ initial, startAdding, newCardQuery }: { initial: Holding[]; startAdding: boolean; newCardQuery?: string }) {
+export function CollectionManager({
+  initial,
+  startAdding,
+  newCardQuery,
+  initialView = DEFAULT_VIEW,
+}: {
+  initial: Holding[];
+  startAdding: boolean;
+  newCardQuery?: string;
+  initialView?: View;
+}) {
   const [items, setItems] = useState(initial);
+  const [view, setView] = useState<View>(initialView);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  // Keep the filters in the URL (shareable, survive refresh) without reloading the page.
+  useEffect(() => {
+    const keep = new URLSearchParams(window.location.search);
+    const next = new URLSearchParams(viewToQuery(view).slice(1));
+    for (const k of ['add', 'new']) if (keep.get(k)) next.set(k, keep.get(k)!);
+    const qs = next.toString();
+    window.history.replaceState(null, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
+  }, [view]);
   const [editing, setEditing] = useState<number | 'new' | null>(startAdding || newCardQuery ? 'new' : null);
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -224,17 +247,30 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
     }
   }
 
-  const totalCost = items.reduce((s, h) => s + h.purchase_price * h.quantity, 0);
-  const totalEst = items.reduce((s, h) => s + (h.estimated_value ?? 0), 0);
+  const all = totals(items);
+  const visible = sortItems(applyFilters(items, view), view.sort);
+  const shown = totals(visible);
+  const filtered = isFiltered(view);
+  const groups = groupItems(visible, view.group);
+  const grouped = view.group !== 'none';
+  const toggleGroup = (k: string) =>
+    setCollapsed((c) => {
+      const n = new Set(c);
+      if (n.has(k)) n.delete(k);
+      else n.add(k);
+      return n;
+    });
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-[22px] font-bold">Collection</h1>
-          <p className="num mt-1 text-[13px] text-muted">
-            {items.length} positions · cost {money(totalCost)} · est. {money(totalEst)} ·{' '}
-            <span className={tone(totalEst - totalCost)}>{signedMoney(totalEst - totalCost)}</span>
+          <p className="num mt-1 text-[13px] text-muted" aria-live="polite">
+            {filtered ? `${shown.count} of ${all.count} positions` : `${all.count} positions`} · cost {money(shown.cost)} · est.{' '}
+            {shown.unpriced === shown.count ? '—' : money(shown.est)} ·{' '}
+            <span className={tone(shown.pnl)}>{shown.unpriced === shown.count ? '—' : signedMoney(shown.pnl)}</span>
+            {shown.unpriced > 0 && <span> · {shown.unpriced} without an estimate</span>}
           </p>
         </div>
         {editing !== 'new' && (
@@ -278,9 +314,18 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
         </p>
       )}
 
+      {items.length > 0 && <CollectionToolbar items={items} view={view} onChange={setView} />}
+
       <section className="panel" aria-label="All holdings">
         {items.length === 0 ? (
           <p className="p-5 text-muted">Nothing here yet — add your first card above.</p>
+        ) : visible.length === 0 ? (
+          <p className="p-5 text-muted">
+            No cards match these filters.{' '}
+            <button className="text-link hover:text-ink" onClick={() => setView({ ...DEFAULT_VIEW, group: view.group, sort: view.sort })}>
+              Clear filters
+            </button>
+          </p>
         ) : (
           <div className="relative overflow-x-auto">
             <table className="w-full min-w-[1120px] border-collapse text-[13px]">
@@ -302,7 +347,39 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
                 </tr>
               </thead>
               <tbody className="font-mono">
-                {items.map((h) =>
+                {groups.map((g) => (
+                  <Fragment key={g.key}>
+                    {grouped && (
+                      <tr className="border-t-2 border-line bg-raised/60 font-sans">
+                        <td colSpan={3} className="px-5 py-2.5">
+                          <button
+                            type="button"
+                            onClick={() => toggleGroup(g.key)}
+                            aria-expanded={!collapsed.has(g.key)}
+                            className="flex items-center gap-2 text-left text-[13px] font-bold text-ink"
+                          >
+                            <span className={`inline-block text-muted transition-transform ${collapsed.has(g.key) ? '-rotate-90' : ''}`}>▾</span>
+                            {g.label}
+                            <span className="font-mono text-[12px] font-normal text-muted">
+                              {g.totals.count} card{g.totals.count === 1 ? '' : 's'}
+                            </span>
+                          </button>
+                        </td>
+                        <td className="td text-right font-mono text-[12px] text-muted" title="Total paid">
+                          {money(g.totals.cost)}
+                        </td>
+                        <td />
+                        <td className="td text-right font-mono text-[12px]" title="Total estimate">
+                          {g.totals.unpriced === g.totals.count ? '—' : money(g.totals.est)}
+                        </td>
+                        <td colSpan={3} />
+                        <td className={`td text-right font-mono text-[12px] ${tone(g.totals.pnl)}`}>
+                          {g.totals.unpriced === g.totals.count ? '—' : signedMoney(g.totals.pnl)}
+                        </td>
+                        <td />
+                      </tr>
+                    )}
+                {!collapsed.has(g.key) && g.items.map((h) =>
                   editing === h.id ? (
                     <tr key={h.id} className="border-t border-line">
                       <td colSpan={11} className="p-4">
@@ -444,6 +521,8 @@ export function CollectionManager({ initial, startAdding, newCardQuery }: { init
                     </Fragment>
                   ),
                 )}
+                  </Fragment>
+                ))}
               </tbody>
             </table>
           </div>

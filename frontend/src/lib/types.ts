@@ -12,6 +12,7 @@ export type Holding = {
   notes: string | null;
   title: string | null;
   player: string | null;
+  sport?: string | null;
   year: number | null;
   brand: string | null;
   card_set: string | null;
