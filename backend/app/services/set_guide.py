@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 SEED_DIR = PROJECT_ROOT / "seed" / "sets"
 PRICE_CACHE_DAYS = 7
-MATCH_VERSION = 2  # bump when title matching changes, so saved 'no sales' results are redone
+MATCH_VERSION = 2  # bump when title matching changes: older saved results are flagged 'outdated'
 
 
 # --------------------------------------------------------------------------- saving
@@ -288,9 +288,11 @@ def price_check(db: Session, card_id: int, parallel_id: int, force: bool = False
         text("SELECT result, fetched_at FROM set_price_cache WHERE card_id = :c AND parallel_id = :p"), {"c": card_id, "p": parallel_id}
     ).mappings().first()
     fresh = cached and cached["fetched_at"] > datetime.now(timezone.utc) - timedelta(days=PRICE_CACHE_DAYS)
-    # Results saved by an older matching rule are looked up again.
-    if fresh and not force and (cached["result"] or {}).get("v", 1) >= MATCH_VERSION:
-        return {**cached["result"], "cached": True, "fetched_at": cached["fetched_at"].isoformat()}
+    if fresh and not force:
+        # Saved by an older matching rule: shown as is, flagged, and only searched again when
+        # the owner presses ↻ (re-searching on its own would spend searches without asking).
+        outdated = (cached["result"] or {}).get("v", 1) < MATCH_VERSION
+        return {**cached["result"], "cached": True, "outdated": outdated, "fetched_at": cached["fetched_at"].isoformat()}
     if not compsapi.enabled():
         raise compsapi.CompsApiError("compsapi_off: price checks need COMPSAPI_KEY in .env", 503)
 

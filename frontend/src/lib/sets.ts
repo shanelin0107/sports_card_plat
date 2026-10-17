@@ -51,6 +51,7 @@ export type PriceResult = {
   last_sale: { total: number; date: string } | null;
   left_out?: { title: string; total: number; date: string | null; url: string; why: string }[];
   cached: boolean;
+  outdated?: boolean; // saved under an older matching rule: press ↻ to redo it
   stale?: string; // a fresh lookup failed (quota / CompsAPI down): this is the last saved result
   fetched_at: string;
 };

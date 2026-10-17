@@ -107,6 +107,10 @@ def test_quota_reached_is_reported_not_crashed(client, fake_api):
     card, _ = _lazer_holding(client)
     r = client.post(f"/api/v1/market/sync/{card}", params={"grade": "raw"})
     assert r.status_code == 200 and r.json()["status"] == "quota"
+    # still says "quota" next time (not "recent": nothing was fetched), and works again once searches are back
+    assert client.post(f"/api/v1/market/sync/{card}", params={"grade": "raw"}).json()["status"] == "quota"
+    state["mode"] = "ok"
+    assert client.post(f"/api/v1/market/sync/{card}", params={"grade": "raw"}).json()["status"] == "synced"
     status = client.get("/api/v1/market/compsapi/status").json()
     assert status["configured"] and status["monthly_quota"] == 100 and "key" not in str(status).lower()
 

@@ -223,7 +223,7 @@ def _sync_compsapi(db: Session, card_id: int, grade: str | None, force: bool, pa
         .where(MarketFetchLog.card_id == card_id, MarketFetchLog.grade == gkey, MarketFetchLog.source == "compsapi")
         .order_by(MarketFetchLog.fetched_at.desc())
     ).first()
-    if last and not force and last.status in ("ok", "quota"):
+    if last and not force and last.status == "ok":  # a "quota" attempt fetched nothing: try again next time
         age = datetime.now(UTC) - last.fetched_at
         if age < timedelta(hours=settings.compsapi_refresh_hours):
             return {"status": "recent", "source": "compsapi", "added": 0, "fetched_at": last.fetched_at.isoformat()}

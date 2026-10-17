@@ -357,3 +357,26 @@ def test_quota_used_up_shows_the_saved_result(client, monkeypatch):
     assert r.status_code == 200 and r.json()["count"] == 1 and "quota" in r.json()["stale"]
     other = fan["cards"][0]
     assert client.post(f"/api/v1/sets/cards/{other['id']}/price", params={"parallel_id": base}).status_code == 429
+
+
+def test_result_from_an_older_rule_is_flagged_not_searched_again(client, monkeypatch):
+    from app.core.config import settings
+    from app.db.session import SessionLocal
+    from app.services import compsapi
+    from sqlalchemy import text
+
+    monkeypatch.setattr(settings, "compsapi_key", "sk_test")
+    fake = _fake_sold([_row(1, "2025-26 Topps Chrome Cooper Flagg Fanatical RC", 280.0, "2026-10-08")])
+    monkeypatch.setattr(compsapi, "fetch_sold", fake)
+    pid = client.get("/api/v1/sets").json()[0]["id"]
+    fan = next(i for i in client.get(f"/api/v1/sets/{pid}").json()["inserts"] if i["name"] == "Fanatical")
+    card = next(c for c in fan["cards"] if c["number"] == "FAN-21")
+    base = fan["parallels"][0]["id"]
+    client.post(f"/api/v1/sets/cards/{card['id']}/price", params={"parallel_id": base})
+    with SessionLocal() as db:  # pretend it was saved by the previous rule
+        db.execute(text("UPDATE set_price_cache SET result = result - 'v' WHERE card_id = :c"), {"c": card["id"]})
+        db.commit()
+    r = client.post(f"/api/v1/sets/cards/{card['id']}/price", params={"parallel_id": base}).json()
+    assert r["cached"] and r["outdated"] and len(fake.calls) == 1
+    r = client.post(f"/api/v1/sets/cards/{card['id']}/price", params={"parallel_id": base, "force": True}).json()
+    assert not r["cached"] and len(fake.calls) == 2

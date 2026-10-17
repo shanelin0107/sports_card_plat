@@ -239,7 +239,7 @@ export function SetPricePanel({
               </div>
 
               <p className="text-[11px] text-muted">
-                {res.stale ? `Couldn’t search again (${res.stale.includes('quota') ? 'monthly CompsAPI searches are used up' : 'CompsAPI is busy'}) — showing the result saved ${longDate(res.fetched_at)}. ` : res.cached ? `Saved result from ${longDate(res.fetched_at)} — no search used. ` : 'Used 1 CompsAPI search. '}
+                {res.outdated ? 'Saved before the matching rules were improved — press ↻ Refresh to redo it (1 search). ' : ''}{res.stale ? `Couldn’t search again (${res.stale.includes('quota') ? 'monthly CompsAPI searches are used up' : 'CompsAPI is busy'}) — showing the result saved ${longDate(res.fetched_at)}. ` : res.cached ? `Saved result from ${longDate(res.fetched_at)} — no search used. ` : 'Used 1 CompsAPI search. '}
                 {left !== null ? `${left} left this month. ` : ''}
                 Searched “{res.query}”: {res.searched} sold listings, {res.count} are this exact card and parallel
                 {res.days ? ` (last ${res.days >= 365 ? `${Math.round(res.days / 365)} year` : `${res.days} days`})` : ''}. Lots and breaks are left out.
