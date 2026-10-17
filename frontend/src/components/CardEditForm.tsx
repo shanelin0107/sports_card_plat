@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 import { api } from '@/lib/client-api';
+import { SPORTS, normalizeSport } from '@/lib/sports';
 
 type Props = {
   cardId: number;
@@ -14,6 +15,7 @@ type Props = {
   parallel: string | null;
   printRun: number | null;
   rookie: boolean;
+  sport: string | null;
 };
 
 /** Fix a catalog card's details (player typo, wrong parallel, missing print run…). */
@@ -39,6 +41,7 @@ export function CardEditForm(p: Props) {
           parallel: f.get('parallel') || 'Base',
           print_run: f.get('print_run') ? Number(f.get('print_run')) : null,
           rookie: f.get('rookie') === 'on',
+          sport: f.get('sport'),
         }),
       });
       setOpen(false);
@@ -74,6 +77,16 @@ export function CardEditForm(p: Props) {
         {input('card_number', 'Card #', p.cardNumber, { required: true })}
         {input('parallel', 'Parallel', p.parallel ?? 'Base')}
         {input('print_run', 'Numbered to (/__)', p.printRun, { type: 'number', min: 1 })}
+        <div className="space-y-1">
+          <label htmlFor="ce-sport" className="eyebrow">
+            Sport
+          </label>
+          <select id="ce-sport" name="sport" className="field" defaultValue={normalizeSport(p.sport) ?? p.sport ?? 'Other'}>
+            {[...new Set([...SPORTS, ...(p.sport && !normalizeSport(p.sport) ? [p.sport] : [])])].map((s) => (
+              <option key={s}>{s}</option>
+            ))}
+          </select>
+        </div>
         <label className="flex min-h-11 items-center gap-2 self-end text-[13px]">
           <input type="checkbox" name="rookie" defaultChecked={p.rookie} className="h-4 w-4 accent-up" /> Rookie
         </label>

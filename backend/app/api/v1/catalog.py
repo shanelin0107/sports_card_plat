@@ -181,6 +181,7 @@ class CardEdit(BaseModel):
     parallel: str | None = Field(default=None, max_length=100)
     print_run: int | None = Field(default=None, ge=1, le=100000)
     rookie: bool | None = None
+    sport: str | None = Field(default=None, max_length=100)
 
 
 @router.patch("/cards/{card_id}")
@@ -210,6 +211,8 @@ def edit_card(card_id: int, body: CardEdit, db: Session = Depends(get_db)):
         card.set_id = _get_or_create(db, CardSet, {"name": name, "release_year": card.year, "brand_id": card.brand_id}, {"sport_id": cs.sport_id}).id
     if body.rookie is not None:
         card.rookie_flag = body.rookie
+    if body.sport and body.sport.strip():
+        card.sport_id = _get_or_create(db, Sport, {"name": normalize_sport(body.sport)}).id
     if body.parallel is not None or body.print_run is not None:
         parallels = db.scalars(select(CardParallel).where(CardParallel.card_id == card_id)).all()
         target = next((p for p in parallels if p.parallel_name.lower() != "base"), parallels[0] if parallels else None)

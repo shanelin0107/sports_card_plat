@@ -78,6 +78,7 @@ export default async function CardDetailPage({
             parallel={m.parallel}
             printRun={m.print_run}
             rookie={m.rookie_flag}
+            sport={m.sport}
           />
           </div>
         </div>

@@ -340,3 +340,13 @@ def test_f1_is_one_sport_whatever_it_is_called(client):
     assert a == b  # same card, same sport
     item = client.post("/api/v1/collection/items", json={"card_id": a, "purchase_price": 50, "purchase_date": "2026-10-01"}).json()
     assert item["sport"] == "F1"
+
+
+def test_edit_card_sport(client):
+    card = client.post("/api/v1/catalog/cards", json={"sport": "Football", "year": 2025, "brand": "Topps", "set_name": "Chrome F1",
+                                                      "player": "Kimi Antonelli", "card_number": "12"}).json()["card_id"]
+    r = client.patch(f"/api/v1/catalog/cards/{card}", json={"sport": "Formula 1"})
+    assert r.status_code == 200
+    assert client.get(f"/api/v1/cards/{card}").json()["metadata"]["sport"] == "F1"
+    # other fields untouched
+    assert client.get(f"/api/v1/cards/{card}").json()["metadata"]["player"] == "Kimi Antonelli"
