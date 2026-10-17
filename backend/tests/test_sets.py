@@ -335,3 +335,25 @@ def test_season_is_not_a_print_run_and_left_out_sales_say_why():
     assert set_guide.match_reason("2025-26 Topps Chrome Stephen Curry Finals", **kw) == "different player"
     gold = {**kw, "parallel": "Gold", "print_run": 50}
     assert set_guide.match_reason("2025/26 Topps Chrome LeBron James Finals Gold /50", **gold) is None
+
+
+def test_quota_used_up_shows_the_saved_result(client, monkeypatch):
+    from app.core.config import settings
+    from app.services import compsapi
+
+    monkeypatch.setattr(settings, "compsapi_key", "sk_test")
+    monkeypatch.setattr(compsapi, "fetch_sold", _fake_sold([_row(1, "2025-26 Topps Chrome Cooper Flagg Fanatical RC", 280.0, "2026-10-08")]))
+    pid = client.get("/api/v1/sets").json()[0]["id"]
+    fan = next(i for i in client.get(f"/api/v1/sets/{pid}").json()["inserts"] if i["name"] == "Fanatical")
+    card = next(c for c in fan["cards"] if c["number"] == "FAN-21")
+    base = fan["parallels"][0]["id"]
+    client.post(f"/api/v1/sets/cards/{card['id']}/price", params={"parallel_id": base})
+
+    def no_quota(*a, **k):
+        raise compsapi.QuotaReached("CompsAPI monthly quota is used up (resets on the 1st, UTC).", 429)
+
+    monkeypatch.setattr(compsapi, "fetch_sold", no_quota)
+    r = client.post(f"/api/v1/sets/cards/{card['id']}/price", params={"parallel_id": base, "force": True})
+    assert r.status_code == 200 and r.json()["count"] == 1 and "quota" in r.json()["stale"]
+    other = fan["cards"][0]
+    assert client.post(f"/api/v1/sets/cards/{other['id']}/price", params={"parallel_id": base}).status_code == 429

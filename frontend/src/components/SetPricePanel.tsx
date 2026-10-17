@@ -184,7 +184,11 @@ export function SetPricePanel({
                   Price checks need a CompsAPI key: add <code className="font-mono text-ink">COMPSAPI_KEY</code> to <code className="font-mono text-ink">.env</code> and restart.
                 </span>
               ) : (
-                <span className="text-down">Lookup failed: {err}</span>
+                <span className="text-down">
+                  {err.includes('quota')
+                    ? 'This month’s CompsAPI searches are used up (they reset on the 1st). Cards you already looked up still show their saved prices.'
+                    : `Lookup failed: ${err}`}
+                </span>
               )}
             </div>
           )}
@@ -235,7 +239,7 @@ export function SetPricePanel({
               </div>
 
               <p className="text-[11px] text-muted">
-                {res.cached ? `Saved result from ${longDate(res.fetched_at)} — no search used. ` : 'Used 1 CompsAPI search. '}
+                {res.stale ? `Couldn’t search again (${res.stale.includes('quota') ? 'monthly CompsAPI searches are used up' : 'CompsAPI is busy'}) — showing the result saved ${longDate(res.fetched_at)}. ` : res.cached ? `Saved result from ${longDate(res.fetched_at)} — no search used. ` : 'Used 1 CompsAPI search. '}
                 {left !== null ? `${left} left this month. ` : ''}
                 Searched “{res.query}”: {res.searched} sold listings, {res.count} are this exact card and parallel
                 {res.days ? ` (last ${res.days >= 365 ? `${Math.round(res.days / 365)} year` : `${res.days} days`})` : ''}. Lots and breaks are left out.

@@ -359,7 +359,12 @@ def price_check(db: Session, card_id: int, parallel_id: int, force: bool = False
 
     others = [r[0] for r in db.execute(text("SELECT name FROM set_insert_parallel WHERE insert_id = :i"), {"i": row["insert_id"]})]
     q = price_query(row["year"], row["set_name"], row["insert"], row["player"], row["parallel"])
-    data = compsapi.fetch_sold(q, {}, None, size=200)
+    try:
+        data = compsapi.fetch_sold(q, {}, None, size=200)
+    except (compsapi.QuotaReached, compsapi.Unavailable) as exc:
+        if cached:  # out of searches or CompsAPI down: the last saved result beats an error
+            return {**cached["result"], "cached": True, "stale": str(exc), "fetched_at": cached["fetched_at"].isoformat()}
+        raise
     kw = dict(insert=row["insert"], player=row["player"], parallel=row["parallel"], print_run=row["print_run"], other_parallels=others, sport=row["sport"], team=row["team"])
     items, left_out = [], []
     for r in data["items"]:
