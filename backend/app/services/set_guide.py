@@ -6,7 +6,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-import unicodedata
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -16,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.config import PROJECT_ROOT
 from app.services import card_photo, compsapi
 from app.services.ebay import serials_in
+from app.services.names import _compact, _name_in, _words, ascii_fold  # noqa: F401  (ascii_fold is re-exported)
 
 logger = logging.getLogger(__name__)
 
@@ -187,14 +187,6 @@ def _owned(db: Session, year: int, insert_ids: list[int]) -> dict[str, int]:
 # --------------------------------------------------------------------------- price check
 
 
-def ascii_fold(s: str) -> str:
-    return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode()
-
-
-def _compact(s: str) -> str:
-    return re.sub(r"[^a-z0-9]", "", ascii_fold(s).lower())
-
-
 def insert_keyword(name: str) -> str:
     """'Ultra Violet All-Stars' -> 'Ultra Violet'; 'The Finals' -> 'Finals'; "Let's Go" -> 'Lets Go'."""
     n = re.sub(r"(?i)\ball[\s-]*stars?\b", "", name)
@@ -220,9 +212,6 @@ _SPORT_WORDS = {
     "soccer": {"soccer", "mls", "uefa", "epl"},
     "f1": {"f1", "formula"},
 }
-_SUFFIX = {"jr", "sr", "ii", "iii", "iv"}
-
-
 def _other_sport(t: str, sport: str | None) -> bool:
     """A Fanatical from Topps Chrome Football is not the basketball one."""
     if not sport or sport.lower() not in _SPORT_WORDS:
@@ -230,59 +219,6 @@ def _other_sport(t: str, sport: str | None) -> bool:
     mine = _SPORT_WORDS[sport.lower()]
     words = set(t.split())
     return any(words & ws for k, ws in _SPORT_WORDS.items() if k != sport.lower() and not (ws & mine)) and not (words & mine - {"wnba"})
-
-
-_NOT_NAMES = set(
-    "topps chrome panini prizm select optic bowman donruss rc rookie rookies ssp sp case hit hits insert inserts refractor "
-    "parallel card cards nba basketball baseball football f1 sp ssp short print variation var gem mint psa bgs sgc cgc raw "
-    "new hot lot the and of a w with auto autograph serial numbered".split()
-)
-
-
-def _words(s: str) -> list[str]:
-    return re.sub(r"[^a-z0-9/]+", " ", ascii_fold(s).lower()).split()
-
-
-def _seq_at(words: list[str], seq: list[str]) -> int:
-    for i in range(len(words) - len(seq) + 1):
-        if words[i : i + len(seq)] == seq:
-            return i
-    return -1
-
-
-def _name_in(t: str, compact: str, player: str, context: set[str] = frozenset()) -> bool:
-    """The card's player, not a namesake: 'Dylan Harper' is not 'Bryce Harper', and a
-    Robinson from another sport is not David Robinson. Sellers often drop famous first names
-    ('Topps Chrome Wembanyama') or last names ('Giannis'), so either alone counts as long as
-    no other first name is written next to it."""
-    parts = [w for w in _words(player) if w not in _SUFFIX]
-    if not parts:
-        return False
-    words = t.split()
-    first, last = parts[0], parts[1:] or parts
-    nonname = _NOT_NAMES | context
-
-    def is_nonname(w: str) -> bool:
-        return w in nonname or any(ch.isdigit() for ch in w) or len(w) <= 1
-
-    initials = "".join(p[0] for p in _words(" ".join(parts).replace("-", " ")))
-
-    def first_ok(w: str) -> bool:
-        return w == first or (len(initials) >= 3 and w == initials) or (len(w) >= 3 and (first.startswith(w) or w.startswith(first[:4])))
-
-    i = _seq_at(words, last)
-    if i < 0 and _compact("".join(last)) in compact:  # 'Gilgeous-Alexander' written 'GilgeousAlexander', "O'Neal" as 'ONeal'
-        i = next((k for k, w in enumerate(words) if _compact("".join(last)).startswith(w) and _compact("".join(words[k : k + len(last) + 1])).startswith(_compact("".join(last)))), -1)
-    if i >= 0:
-        if len(parts) == 1 or any(first_ok(w) for w in words):
-            return True
-        # No first name: the words around the surname must not be another player's name
-        # ('Topps Chrome Wembanyama Fanatical' yes; 'Allen Iverson' is not Ray Allen).
-        after = i + len(last)
-        return (i == 0 or is_nonname(words[i - 1])) and (after >= len(words) or is_nonname(words[after]))
-    # Last name missing: a distinctive first name on its own ('Giannis', 'Wemby' is not handled).
-    j = next((k for k, w in enumerate(words) if w == first), -1)
-    return len(first) >= 6 and j >= 0 and (j + 1 >= len(words) or is_nonname(words[j + 1]))
 
 
 def match_reason(

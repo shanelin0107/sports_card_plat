@@ -17,6 +17,7 @@ import httpx
 from app.core.config import settings
 from app.services.ebay import match_listing
 from app.services.ingestion.parsing import parse_title
+from app.services.names import TEAM_WORDS
 
 USER_AGENT = "sports-card-portfolio/0.6 (+compsapi)"  # the API rejects requests without one
 
@@ -207,19 +208,10 @@ _DROP = {
     "psa", "bgs", "sgc", "cgc", "gem", "mint", "mt", "nm",
 }
 # Team nicknames: many titles leave them out, and they never identify the card.
-_TEAM_WORDS = set(
-    (
-        "cardinals falcons ravens bills panthers bears bengals browns cowboys broncos lions packers texans colts jaguars "
-        "chiefs raiders chargers rams dolphins vikings patriots saints giants jets eagles steelers 49ers niners seahawks "
-        "buccaneers bucs titans commanders hawks celtics nets hornets bulls cavaliers cavs mavericks mavs nuggets pistons "
-        "warriors rockets pacers clippers lakers grizzlies heat bucks timberwolves wolves pelicans knicks thunder magic "
-        "76ers sixers suns blazers kings spurs raptors jazz wizards diamondbacks dbacks braves orioles cubs reds guardians "
-        "rockies tigers astros royals angels dodgers marlins brewers twins mets yankees athletics phillies pirates padres "
-        "mariners rays rangers jays nationals ducks bruins sabres flames hurricanes blackhawks avalanche oilers predators "
-        "devils islanders senators flyers penguins sharks kraken blues lightning leafs canucks capitals "
-        "ferrari mercedes mclaren williams alpine haas sauber"
-    ).split()
-)
+# Team nicknames: many titles leave them out, and they never identify the card.
+_TEAM_WORDS = TEAM_WORDS
+
+
 # Pattern words sellers spell several ways ("RayWave" / "Ray Wave"): checked on the result
 # titles after normalising, instead of being sent as search keywords.
 _PATTERNS = {
