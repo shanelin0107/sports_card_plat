@@ -15,11 +15,13 @@ from sqlalchemy.orm import Session
 
 from app.core.config import PROJECT_ROOT
 from app.services import card_photo, compsapi
+from app.services.ebay import serials_in
 
 logger = logging.getLogger(__name__)
 
 SEED_DIR = PROJECT_ROOT / "seed" / "sets"
 PRICE_CACHE_DAYS = 7
+MATCH_VERSION = 2  # bump when title matching changes, so saved 'no sales' results are redone
 
 
 # --------------------------------------------------------------------------- saving
@@ -208,7 +210,6 @@ def price_query(year: int, set_name: str, insert: str, player: str, parallel: st
 
 
 _SET_JUNK = re.compile(r"\b(lot|lots|reprint|custom|digital|break|breaks|you pick|u pick|pick your|choose|random)\b")
-_SERIAL = re.compile(r"(?<![\d.])(?:\d{1,4})?\s*/\s*(\d{1,4})\b")
 
 
 _SPORT_WORDS = {
@@ -284,7 +285,7 @@ def _name_in(t: str, compact: str, player: str, context: set[str] = frozenset())
     return len(first) >= 6 and j >= 0 and (j + 1 >= len(words) or is_nonname(words[j + 1]))
 
 
-def title_matches(
+def match_reason(
     title: str,
     *,
     insert: str,
@@ -294,29 +295,44 @@ def title_matches(
     other_parallels: list[str],
     sport: str | None = None,
     team: str | None = None,
-) -> bool:
-    """Is this sold listing the checklist card in the asked-for parallel?"""
+) -> str | None:
+    """None when this sold listing is the checklist card in the asked-for parallel;
+    otherwise a short reason it was left out (shown to the owner)."""
     t = " " + re.sub(r"[^a-z0-9/]+", " ", ascii_fold(title).lower()) + " "
     compact = _compact(title)
     if _SET_JUNK.search(t):
-        return False
-    context = set(_words(insert)) | {w for p in other_parallels for w in _words(p)} | set(_words(team or ''))
-    if not _name_in(t, compact, player, context) or _other_sport(t, sport):
-        return False
+        return "lot / break / reprint"
+    if _other_sport(t, sport):
+        return "another sport"
+    context = set(_words(insert)) | {w for p in other_parallels for w in _words(p)} | set(_words(team or ""))
+    if not _name_in(t, compact, player, context):
+        return "different player"
     if _compact(insert_keyword(insert)) not in compact:
-        return False
-    serials = {int(x) for x in _SERIAL.findall(t)}
-    is_super = "superfractor" in compact or "1/1" in t.replace(" ", "")
+        return f"not {insert_keyword(insert)}"
+    serials = serials_in(t)
+    is_super = "superfractor" in compact or bool(re.search(r"(?<![\d/])1\s*/\s*1(?![\d/])", t))
     p = parallel.lower()
     if p == "base":
-        if serials or is_super:
-            return False  # numbered or 1/1 copies are parallels, not the base insert
-        return not any(f" {w.lower()} " in t for w in other_parallels if w.lower() not in {"base", "superfractor"})
+        if is_super:
+            return "SuperFractor 1/1"
+        if serials:
+            return f"numbered /{min(serials)} (a parallel)"
+        # A colour word alone can describe the design (a gold trophy); with 'refractor' it's the parallel.
+        colours = [w for w in other_parallels if w.lower() not in {"base", "superfractor"} and f" {w.lower()} " in t]
+        if colours and re.search(r"\b(refractor|parallel|numbered|ssp /)\b", t):
+            return f"{colours[0]} parallel"
+        return None
     if p == "superfractor":
-        return is_super
+        return None if is_super else "not the SuperFractor"
     if f" {p} " not in t and _compact(p) not in compact:
-        return False
-    return not (print_run and serials and print_run not in serials)
+        return f"not {parallel}"
+    if print_run and serials and print_run not in serials:
+        return f"numbered /{min(serials)}, not /{print_run}"
+    return None
+
+
+def title_matches(title: str, **kw) -> bool:
+    return match_reason(title, **kw) is None
 
 
 def price_check(db: Session, card_id: int, parallel_id: int, force: bool = False) -> dict:
@@ -334,7 +350,9 @@ def price_check(db: Session, card_id: int, parallel_id: int, force: bool = False
     cached = db.execute(
         text("SELECT result, fetched_at FROM set_price_cache WHERE card_id = :c AND parallel_id = :p"), {"c": card_id, "p": parallel_id}
     ).mappings().first()
-    if cached and not force and cached["fetched_at"] > datetime.now(timezone.utc) - timedelta(days=PRICE_CACHE_DAYS):
+    fresh = cached and cached["fetched_at"] > datetime.now(timezone.utc) - timedelta(days=PRICE_CACHE_DAYS)
+    # Results saved by an older matching rule are looked up again.
+    if fresh and not force and (cached["result"] or {}).get("v", 1) >= MATCH_VERSION:
         return {**cached["result"], "cached": True, "fetched_at": cached["fetched_at"].isoformat()}
     if not compsapi.enabled():
         raise compsapi.CompsApiError("compsapi_off: price checks need COMPSAPI_KEY in .env", 503)
@@ -342,14 +360,14 @@ def price_check(db: Session, card_id: int, parallel_id: int, force: bool = False
     others = [r[0] for r in db.execute(text("SELECT name FROM set_insert_parallel WHERE insert_id = :i"), {"i": row["insert_id"]})]
     q = price_query(row["year"], row["set_name"], row["insert"], row["player"], row["parallel"])
     data = compsapi.fetch_sold(q, {}, None, size=200)
-    items = [
-        {k: r[k] for k in ("item_id", "title", "price", "shipping", "total", "date", "url", "image", "best_offer", "grade")}
-        for r in data["items"]
-        if r["date"]
-        and title_matches(
-            r["title"], insert=row["insert"], player=row["player"], parallel=row["parallel"], print_run=row["print_run"], other_parallels=others, sport=row["sport"], team=row["team"]
-        )
-    ]
+    kw = dict(insert=row["insert"], player=row["player"], parallel=row["parallel"], print_run=row["print_run"], other_parallels=others, sport=row["sport"], team=row["team"])
+    items, left_out = [], []
+    for r in data["items"]:
+        why = match_reason(r["title"], **kw) if r["date"] else "no sale date"
+        if why is None:
+            items.append({k: r[k] for k in ("item_id", "title", "price", "shipping", "total", "date", "url", "image", "best_offer", "grade")})
+        elif len(left_out) < 15:
+            left_out.append({"title": r["title"], "total": r["total"], "date": r["date"], "url": r["url"], "why": why})
     items.sort(key=lambda r: r["date"], reverse=True)
     result = {
         "query": q,
@@ -359,6 +377,8 @@ def price_check(db: Session, card_id: int, parallel_id: int, force: bool = False
         "items": items,
         "stats": compsapi._stats([r["total"] for r in items]),
         "last_sale": items[0] if items else None,
+        "left_out": left_out,  # what the search found that isn't this card, and why
+        "v": MATCH_VERSION,
     }
     db.execute(
         text(

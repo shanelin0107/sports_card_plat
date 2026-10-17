@@ -49,6 +49,7 @@ export type PriceResult = {
   items: { item_id: string; title: string; price: number; shipping: number; total: number; date: string; url: string; image: string | null; best_offer: boolean; grade: string }[];
   stats: { count: number; low: number; median: number; high: number } | null;
   last_sale: { total: number; date: string } | null;
+  left_out?: { title: string; total: number; date: string | null; url: string; why: string }[];
   cached: boolean;
   fetched_at: string;
 };

@@ -279,6 +279,25 @@ export function SetPricePanel({
                   ))}
                 </ul>
               )}
+              {res.left_out && res.left_out.length > 0 && (
+                <details open={res.count === 0} className="rounded-md border border-line p-3 text-[12px]">
+                  <summary className="cursor-pointer text-muted">
+                    {res.searched - res.count} other sold listing{res.searched - res.count === 1 ? '' : 's'} the search found — left out (not this card)
+                  </summary>
+                  <ul className="mt-2 space-y-1.5">
+                    {res.left_out.map((x, k) => (
+                      <li key={k} className="flex gap-2">
+                        <span className="w-[150px] shrink-0 font-mono text-[11px] text-warn">{x.why}</span>
+                        <a href={x.url} target="_blank" rel="noopener noreferrer nofollow" className="min-w-0 flex-1 truncate text-ink hover:text-link" title={x.title}>
+                          {x.title}
+                        </a>
+                        <span className="shrink-0 font-mono">{money(x.total)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-2 text-[11px] text-muted">If one of these really is this card, take a screenshot of this list so the matching rule can be fixed.</p>
+                </details>
+              )}
             </>
           )}
         </div>

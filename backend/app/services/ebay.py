@@ -133,6 +133,16 @@ def _norm(s: str) -> str:
 # Refractor): only the distinctive words of a parallel name have to appear in a title.
 _GENERIC_PARALLEL = {"refractor", "refractors", "prizm", "prizms", "parallel", "chrome"}
 _SERIAL = re.compile(r"(?<![\d.])(?:\d{1,4})?\s*/\s*(\d{1,4})\b")  # "/25", "12/25", "#/25"
+_SEASON = re.compile(r"\b((?:19|20)?\d{2})\s*/\s*(\d{2})\b")
+
+
+def strip_seasons(t: str) -> str:
+    """'2025/26' and '25/26' are seasons, not print runs: blank them before reading serials."""
+    return _SEASON.sub(lambda m: f" {m.group(1)} " if (int(m.group(1)[-2:]) + 1) % 100 == int(m.group(2)) else m.group(0), t)
+
+
+def serials_in(t: str) -> set[int]:
+    return {int(x) for x in _SERIAL.findall(strip_seasons(t))}
 _ANY_NUMBER = re.compile(r"#\s*[a-z0-9]")
 
 
@@ -217,7 +227,7 @@ def match_listing(title: str, target: dict | None, strict_base: bool = False) ->
         if _ANY_NUMBER.search(t) or not specific:
             misses.append("card #")
     if print_run:
-        serials = {int(m) for m in _SERIAL.findall(t)}
+        serials = serials_in(t)
         if serials and int(print_run) not in serials:
             misses.append("print run")  # /50 is not /25
     if parallel and parallel != "base":

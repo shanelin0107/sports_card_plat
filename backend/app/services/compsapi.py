@@ -234,9 +234,9 @@ def simplify_query(q: str) -> tuple[str, list[str], int | None]:
 
     "2025 Topps Chrome F1 Oliver Bearman Auto Orange RayWave Refractor RC #/25"
     -> ("2025 topps chrome oliver bearman orange", ["raywave"], 25)"""
-    from app.services.ebay import _SERIAL, _norm
+    from app.services.ebay import _SERIAL, _norm, strip_seasons
 
-    t = _norm(q)
+    t = strip_seasons(_norm(q))
     serial = _SERIAL.search(t)
     run = int(serial.group(1)) if serial else None
     t = _SERIAL.sub(" ", t)
@@ -271,9 +271,9 @@ def search_sold(query: str, days: int | None = None) -> dict:
         if _JUNK.search(t) or not all(f" {w} " in t for w in must):
             return False
         if run:
-            from app.services.ebay import _SERIAL
+            from app.services.ebay import serials_in
 
-            serials = {int(x) for x in _SERIAL.findall(t)}
+            serials = serials_in(t)
             if serials and run not in serials:
                 return False  # a /50 is not the /25 that was asked for
         return True

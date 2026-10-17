@@ -111,6 +111,7 @@ def test_price_check_filters_caches_and_sets_photo(client, monkeypatch):
     r = client.post(f"/api/v1/sets/cards/{card['id']}/price", params={"parallel_id": base["id"]}).json()
     assert fake.calls == ["2025 Topps Chrome Fanatical Cooper Flagg"]
     assert r["count"] == 2 and r["stats"]["median"] == 280.0 and r["last_sale"]["total"] == 300.0 and not r["cached"]
+    assert {x["why"] for x in r["left_out"]} == {"numbered /50 (a parallel)", "not Fanatical"}
 
     again = client.post(f"/api/v1/sets/cards/{card['id']}/price", params={"parallel_id": base["id"]}).json()
     assert again["cached"] and len(fake.calls) == 1  # 7-day cache: no second search
@@ -324,3 +325,13 @@ def test_surname_that_is_someone_elses_first_name():
     kw = dict(insert="Fanatical", parallel="Base", print_run=None, other_parallels=["Base"], sport="Basketball")
     assert not set_guide.title_matches("2025-26 Topps Chrome Allen Iverson Fanatical SSP", player="Ray Allen", team="Seattle Supersonics", **kw)
     assert set_guide.title_matches("2025-26 Topps Chrome Wembanyama Spurs Fanatical", player="Victor Wembanyama", team="San Antonio Spurs", **kw)
+
+
+def test_season_is_not_a_print_run_and_left_out_sales_say_why():
+    kw = dict(insert="The Finals", player="LeBron James", parallel="Base", print_run=None, other_parallels=["Base", "Gold", "SuperFractor"], sport="Basketball")
+    assert set_guide.match_reason("2025/26 Topps Chrome The Finals LeBron James FIN-1 Die-Cut", **kw) is None
+    assert set_guide.match_reason("2025-26 Topps Chrome LeBron James Finals Gold Trophy Die Cut", **kw) is None  # gold = the design
+    assert set_guide.match_reason("2025-26 Topps Chrome LeBron Finals Gold Refractor /50", **kw) == "numbered /50 (a parallel)"
+    assert set_guide.match_reason("2025-26 Topps Chrome Stephen Curry Finals", **kw) == "different player"
+    gold = {**kw, "parallel": "Gold", "print_run": 50}
+    assert set_guide.match_reason("2025/26 Topps Chrome LeBron James Finals Gold /50", **gold) is None
