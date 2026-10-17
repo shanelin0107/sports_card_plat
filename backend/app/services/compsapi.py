@@ -183,3 +183,52 @@ def usage() -> dict:
         "monthly_quota": u.get("monthly_quota"),
         "rpm_limit": u.get("rpm_limit"),
     }
+
+
+# --------------------------------------------------------------------------- free-text sold search
+
+SEARCH_CACHE_SECONDS = 6 * 3600  # the same search within 6 h reuses the result (no quota spent)
+_search_cache: dict[str, tuple[float, dict]] = {}
+
+
+def _stats(prices: list[float]) -> dict | None:
+    if not prices:
+        return None
+    s = sorted(prices)
+    n = len(s)
+    med = s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
+    return {"count": n, "low": s[0], "median": round(med, 2), "high": s[-1]}
+
+
+def search_sold(query: str, days: int | None = None) -> dict:
+    """Sold eBay listings for whatever the owner typed (search page). One CompsAPI request,
+    cached for 6 hours; grades are read from titles so the page can filter without
+    spending more requests. Lots, breaks, reprints and sealed product are left out."""
+    from app.services.ebay import _JUNK, _norm
+
+    q = " ".join(query.split())[:300]
+    key = f"{q.lower()}|{days or settings.compsapi_days}"
+    hit = _search_cache.get(key)
+    if hit and time.time() - hit[0] < SEARCH_CACHE_SECONDS:
+        return {**hit[1], "cached": True}
+
+    data = fetch_sold(q, {}, None, days=days, size=200)
+    items = [r for r in data["items"] if r["date"] and not _JUNK.search(f" {_norm(r['title'])} ")]
+    for r in items:
+        for k in ("exact_match", "mismatches"):
+            r.pop(k, None)
+    items.sort(key=lambda r: r.get("sold_at") or r["date"], reverse=True)
+    out = {
+        "query": q,
+        "days": data.get("days"),
+        "count": len(items),
+        "items": items,
+        "stats": _stats([r["total"] for r in items]),
+        "last_sale": items[0] if items else None,
+        "cached": False,
+    }
+    _search_cache[key] = (time.time(), out)
+    if len(_search_cache) > 200:  # keep memory bounded
+        for k, _ in sorted(_search_cache.items(), key=lambda kv: kv[1][0])[:50]:
+            _search_cache.pop(k, None)
+    return out

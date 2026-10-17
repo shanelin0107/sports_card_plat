@@ -7,6 +7,7 @@ import { api } from '@/lib/client-api';
 import { resizeForUpload } from '@/lib/images';
 import { money } from '@/lib/format';
 import { gradeParam } from '@/lib/grade';
+import { guessCard } from '@/lib/guess-card';
 import { SPORTS, normalizeSport } from '@/lib/sports';
 import type { Holding } from '@/lib/types';
 
@@ -27,7 +28,36 @@ type CardFields = {
   grader: string | null;
   grade_value: string | null;
 };
-type Item = { item_id: string; title: string; price: number | null; url: string; image: string | null; card: CardFields };
+type Item = { item_id: string; title: string; price: number | null; url: string; image: string | null; card: CardFields; fromTitle?: boolean };
+
+/** Card details guessed from the listing title: used for sold listings (eBay no longer serves
+ *  ended items) and whenever the item specifics can't be read. */
+function itemFromTitle(l: SearchListing): Item {
+  const g = guessCard(l.title);
+  const [grader, gradeValue] = l.grade && l.grade !== 'Raw' ? l.grade.split(' ') : [null, null];
+  return {
+    item_id: l.item_id,
+    title: l.title,
+    price: l.price,
+    url: l.url,
+    image: l.image ?? null,
+    fromTitle: true,
+    card: {
+      sport: g.sport ?? null,
+      year: g.year ? Number(g.year) : null,
+      brand: g.brand ?? null,
+      set_name: g.set_name ?? null,
+      player: g.player ?? null,
+      card_number: g.card_number ?? null,
+      parallel: g.parallel ?? null,
+      print_run: g.print_run ? Number(g.print_run) : null,
+      rookie: Boolean(g.rookie),
+      autograph: /\bauto(graph)?\b/i.test(l.title),
+      grader: grader ?? null,
+      grade_value: gradeValue ?? null,
+    },
+  };
+}
 
 const GRADES = ['raw', '10', '9.5', '9', '8.5', '8', '7', '6', '5', '4', '3', '2', '1'];
 const GRADERS = ['PSA', 'BGS', 'SGC', 'CGC'];
@@ -46,15 +76,25 @@ export function AddFromListing({ listing, onClose }: { listing: SearchListing; o
   const [photoMode, setPhotoMode] = useState<'listing' | 'own' | 'none'>('listing');
   const [own, setOwn] = useState<{ content_type: string; data_base64: string; preview: string } | null>(null);
   const [ownUrl, setOwnUrl] = useState('');
-  const [sales, setSales] = useState<SaleRow[]>([emptyRow()]);
+  // Adding from a sold listing: that sale is a real data point for this card, so it starts in the sales table.
+  const [sales, setSales] = useState<SaleRow[]>(() =>
+    listing.sold && listing.date
+      ? [{ date: listing.date, price: String(listing.price), shipping: listing.shipping ? String(listing.shipping) : '', grade: listing.grade || 'Raw', url: listing.url }]
+      : [emptyRow()],
+  );
   const [salesResult, setSalesResult] = useState<{ saved: number; errors: string[] } | null>(null);
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    ref.current?.focus();
+    if (listing.sold) {
+      setItem(itemFromTitle(listing));
+      return;
+    }
     api<Item>(`/market/ebay/item/${encodeURIComponent(listing.item_id)}`)
       .then(setItem)
-      .catch((e: Error) => setErr(e.message));
-    ref.current?.focus();
+      .catch(() => setItem(itemFromTitle(listing))); // item specifics unavailable: fall back to the title
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per listing
   }, [listing.item_id]);
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
@@ -182,7 +222,11 @@ export function AddFromListing({ listing, onClose }: { listing: SearchListing; o
 
             {c && (
               <form onSubmit={submit} className="min-w-[280px] flex-1 space-y-4">
-                <p className="text-[12px] text-muted">Filled from the seller’s item specifics — check them; sellers sometimes get these wrong.</p>
+                <p className="text-[12px] text-muted">
+                  {item?.fromTitle
+                    ? 'Filled from the listing title — check each field, especially set, number and parallel.'
+                    : 'Filled from the seller’s item specifics — check them; sellers sometimes get these wrong.'}
+                </p>
                 <div className="grid grid-cols-2 gap-3">
                   {field('player', 'Player', c.player, { required: true })}
                   {field('year', 'Year', c.year, { type: 'number', required: true, min: 1880, max: 2100 })}
@@ -324,7 +368,9 @@ export function AddFromListing({ listing, onClose }: { listing: SearchListing; o
                       <input id="afl-notes" name="notes" className="field" placeholder="Optional" />
                     </div>
                   </div>
-                  <p className="mt-2 text-[12px] text-muted">Price is pre-filled with this listing’s {money(item?.price ?? listing.price)} — change it to what you actually paid.</p>
+                  <p className="mt-2 text-[12px] text-muted">
+                    Price is pre-filled with this {listing.sold ? 'sale' : 'listing'}’s {money(item?.price ?? listing.price)} — change it to what you actually paid.
+                  </p>
                 </div>
                 <div className="border-t border-line pt-4">
                   <p className="eyebrow mb-2">Recent sales (optional)</p>

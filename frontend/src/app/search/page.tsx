@@ -3,7 +3,7 @@ import { apiTry } from '@/lib/server-api';
 import type { CardSearchResult } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
-export const metadata = { title: 'Search eBay · Slab Terminal' };
+export const metadata = { title: 'Sold prices · Slab Terminal' };
 
 export default async function SearchPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const { q = '' } = await searchParams;
@@ -12,7 +12,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
 
   return (
     <main className="mx-auto flex max-w-[1440px] flex-col gap-5 px-4 pb-10 pt-6 sm:px-7">
-      <h1 className="text-[22px] font-bold">{q ? <>eBay results for “{q}”</> : 'Search eBay'}</h1>
+      <h1 className="text-[22px] font-bold">{q ? <>Sold on eBay: “{q}”</> : 'Search sold prices'}</h1>
       <EbaySearch q={q} owned={owned} />
     </main>
   );

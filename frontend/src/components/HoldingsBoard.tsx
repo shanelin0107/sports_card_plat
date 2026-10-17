@@ -29,7 +29,7 @@ export function HoldingsBoard({ holdings }: { holdings: Holding[] }) {
         </div>
         {holdings.length === 0 ? (
           <p className="p-5 text-muted">
-            No cards yet. <Link href="/search" className="text-link">Search eBay to add your first card →</Link>
+            No cards yet. <Link href="/search" className="text-link">Search sold prices to add your first card →</Link>
           </p>
         ) : (
           <div className="relative overflow-x-auto">

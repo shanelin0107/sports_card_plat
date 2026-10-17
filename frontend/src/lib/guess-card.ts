@@ -48,7 +48,29 @@ const PARALLEL_WORDS = [
   'silver', 'black', 'gold', 'red', 'blue', 'green', 'orange', 'purple', 'pink', 'white', 'bronze', 'teal',
   'holo', 'refractor', 'mojo', 'wave', 'shimmer', 'disco', 'hyper', 'scope', 'camo', 'cracked', 'ice',
   'tie-dye', 'neon', 'snakeskin', 'velocity', 'fast', 'break', 'choice', 'mojo', 'xfractor', 'sapphire',
+  'lazer', 'laser', 'sparkle', 'glitter', 'pulsar', 'nebula', 'tiger', 'zebra', 'fluorescent', 'galactic', 'kaleidoscope',
+  'atomic', 'lava', 'speckle', 'raywave', 'geometric', 'checkerboard', 'aqua', 'yellow', 'peacock', 'stars', 'logo',
 ];
+
+// Team nicknames show up in almost every listing title; they are never part of the player's name.
+const TEAMS = new Set(
+  (
+    // NFL
+    'cardinals falcons ravens bills panthers bears bengals browns cowboys broncos lions packers texans colts jaguars chiefs ' +
+    'raiders chargers rams dolphins vikings patriots saints giants jets eagles steelers 49ers niners seahawks buccaneers bucs titans commanders ' +
+    // NBA
+    'hawks celtics nets hornets bulls cavaliers cavs mavericks mavs nuggets pistons warriors rockets pacers clippers lakers grizzlies heat ' +
+    'bucks timberwolves wolves pelicans knicks thunder magic 76ers sixers suns blazers trail kings spurs raptors jazz wizards ' +
+    // MLB
+    'diamondbacks dbacks braves orioles sox cubs reds guardians rockies tigers astros royals angels dodgers marlins brewers twins mets yankees ' +
+    'athletics phillies pirates padres mariners rays rangers jays nationals ' +
+    // NHL
+    'ducks coyotes bruins sabres flames hurricanes blackhawks avalanche blue jackets stars wings oilers ' +
+    'predators devils islanders senators flyers penguins sharks kraken blues lightning leafs canucks knights capitals jets ' +
+    // F1
+    'ferrari mercedes mclaren williams alpine haas sauber aston martin bull racing bulls'
+  ).split(' '),
+);
 const NOISE = new Set(['rc', 'rookie', 'psa', 'bgs', 'sgc', 'cgc', 'auto', 'autograph', 'card', 'base', 'raw', 'gem', 'mint', 'mt']);
 
 const title = (s: string) => s.replace(/\b[a-z]/g, (c) => c.toUpperCase());
@@ -109,11 +131,21 @@ export function guessCard(query: string): CardGuess {
     }
   }
 
+  // Team names that contain a colour would otherwise read as a parallel ("Red Bull" -> "Red").
+  q = q.replace(/\b(oracle red bull racing|red bull racing|red bull|red sox|white sox|blue jays|red wings|blue jackets|golden state|golden knights|aston martin|racing bulls|trail blazers)\b/gi, ' ');
   const words = q.split(/\s+/).filter(Boolean);
   const parallel = words.filter((w) => PARALLEL_WORDS.includes(w.toLowerCase()));
-  if (parallel.length) g.parallel = title(parallel.join(' ').toLowerCase());
+  // A leftover "Prizm"/"Refractor" after the set was found names the parallel ("Lazer Prizm", "Gold Refractor").
+  const tail = parallel.length ? words.find((w) => /^(prizm|prizms)$/i.test(w)) : undefined;
+  if (parallel.length) g.parallel = title([...parallel, ...(tail ? [tail] : [])].join(' ').toLowerCase());
   const player = words.filter(
-    (w) => !PARALLEL_WORDS.includes(w.toLowerCase()) && !NOISE.has(w.toLowerCase()) && !/\d/.test(w) && !/^[^a-z]+$/i.test(w),
+    (w) =>
+      !PARALLEL_WORDS.includes(w.toLowerCase()) &&
+      !NOISE.has(w.toLowerCase()) &&
+      !TEAMS.has(w.toLowerCase()) &&
+      !/^(prizm|prizms|refractor|chrome|parallel|insert|ssp|sp|numbered|card|cards|nfl|nba|mlb|nhl|f1)$/i.test(w) &&
+      !/\d/.test(w) &&
+      !/^[^a-z]+$/i.test(w),
   );
   if (player.length) g.player = title(player.join(' ').toLowerCase());
   return g;

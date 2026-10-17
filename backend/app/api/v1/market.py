@@ -275,6 +275,20 @@ def _sync_compsapi(db: Session, card_id: int, grade: str | None, force: bool, pa
     }
 
 
+@router.get("/sold-search")
+def sold_search(q: str = Query(min_length=2, max_length=300)):
+    """Search page: eBay SOLD listings for a free-text query (CompsAPI). Live listings
+    stay on each card's page (/ebay/listings)."""
+    if not compsapi.enabled():
+        raise HTTPException(status_code=503, detail="compsapi_off: sold search needs COMPSAPI_KEY in .env")
+    try:
+        return compsapi.search_sold(q)
+    except compsapi.QuotaReached as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except (compsapi.CompsApiError, httpx.HTTPError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 @router.get("/compsapi/status")
 def compsapi_status():
     """Is CompsAPI configured, and how much of this month's quota is used (free call)."""

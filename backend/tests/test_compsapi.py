@@ -218,3 +218,22 @@ def test_f1_titles_match_either_spelling():
         assert match_listing(title, t, strict_base=True) == (True, []), title
     t2 = {**t, "product": "Topps Chrome Formula 1"}
     assert match_listing("2024 Topps Chrome F1 Max Verstappen #1", t2, strict_base=True) == (True, [])
+
+
+def test_sold_search_returns_sold_items_cached(client, fake_api):
+    calls, _ = fake_api
+    compsapi._search_cache.clear()
+    r = client.get("/api/v1/market/sold-search", params={"q": "2024 prizm drake maye 329 lazer"}).json()
+    titles = [i["title"] for i in r["items"]]
+    assert r["count"] == 4 and not any("lot" in t.lower() for t in titles)  # the lot is left out
+    assert r["items"][0]["date"] == "2026-10-05" and r["last_sale"]["total"] == 34.5  # newest first, price + shipping
+    assert {i["grade"] for i in r["items"]} >= {"Raw", "PSA 10"}
+    assert r["stats"]["count"] == 4 and r["cached"] is False
+    n = len(calls)
+    again = client.get("/api/v1/market/sold-search", params={"q": "2024  Prizm Drake Maye 329 Lazer"}).json()
+    assert again["cached"] is True and len(calls) == n  # same search: no request spent
+
+
+def test_sold_search_without_key_says_so(client):
+    r = client.get("/api/v1/market/sold-search", params={"q": "anything"})
+    assert r.status_code == 503 and "compsapi_off" in r.json()["detail"]
