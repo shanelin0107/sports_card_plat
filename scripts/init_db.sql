@@ -369,3 +369,13 @@ CREATE TABLE IF NOT EXISTS set_price_cache (
 );
 -- v0.7.1: when photos were last looked up for a whole insert (one search fills every card).
 ALTER TABLE set_insert ADD COLUMN IF NOT EXISTS photos_checked_at TIMESTAMPTZ;
+-- v0.7.2: photos are picked by how well they show the card (crop box kept to show it edge to
+-- edge); a photo the owner picks is never replaced. Photos from the first matcher (which took
+-- 'Bryce Harper' for 'Dylan Harper') are cleared once so they get looked up again.
+ALTER TABLE set_insert_card ADD COLUMN IF NOT EXISTS image_crop JSONB;
+ALTER TABLE set_insert_card ADD COLUMN IF NOT EXISTS image_locked BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE set_insert_card ADD COLUMN IF NOT EXISTS photo_rev INT NOT NULL DEFAULT 0;
+UPDATE set_insert SET photos_checked_at = NULL
+  WHERE id IN (SELECT insert_id FROM set_insert_card WHERE photo_rev < 2 AND image_url IS NOT NULL);
+UPDATE set_insert_card SET image_url = NULL, image_crop = NULL, photo_rev = 2 WHERE photo_rev < 2 AND NOT image_locked;
+ALTER TABLE set_insert_card ALTER COLUMN photo_rev SET DEFAULT 2;

@@ -7,6 +7,7 @@ import json
 import logging
 import re
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -14,7 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.config import PROJECT_ROOT
-from app.services import compsapi
+from app.services import card_photo, compsapi
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +134,7 @@ def product_detail(db: Session, pid: int) -> dict | None:
         text("SELECT id, insert_id, name, print_run, odds FROM set_insert_parallel WHERE insert_id = ANY(:ids) ORDER BY sort, id"), {"ids": ids}
     ).mappings()
     cards = db.execute(
-        text("SELECT id, insert_id, number, player, team, rookie, image_url FROM set_insert_card WHERE insert_id = ANY(:ids) ORDER BY sort, id"),
+        text("SELECT id, insert_id, number, player, team, rookie, image_url, image_crop, image_locked FROM set_insert_card WHERE insert_id = ANY(:ids) ORDER BY sort, id"),
         {"ids": ids},
     ).mappings()
     prices = db.execute(
@@ -150,7 +151,7 @@ def product_detail(db: Session, pid: int) -> dict | None:
         by_insert[r["insert_id"]]["parallels"].append({"id": r["id"], "name": r["name"], "print_run": r["print_run"], "odds": r["odds"] or {}})
     card_map: dict[int, dict] = {}
     for r in cards:
-        c = {k: r[k] for k in ("id", "number", "player", "team", "rookie", "image_url")}
+        c = {k: r[k] for k in ("id", "number", "player", "team", "rookie", "image_url", "image_crop", "image_locked")}
         c["owned"] = owned.get(r["number"].upper(), 0)
         c["prices"] = {}
         card_map[r["id"]] = c
@@ -211,14 +212,97 @@ _SET_JUNK = re.compile(r"\b(lot|lots|reprint|custom|digital|break|breaks|you pic
 _SERIAL = re.compile(r"(?<![\d.])(?:\d{1,4})?\s*/\s*(\d{1,4})\b")
 
 
-def title_matches(title: str, *, insert: str, player: str, parallel: str, print_run: int | None, other_parallels: list[str]) -> bool:
+_SPORT_WORDS = {
+    "basketball": {"basketball", "nba", "wnba"},
+    "baseball": {"baseball", "mlb", "bowman"},
+    "football": {"football", "nfl"},
+    "hockey": {"hockey", "nhl"},
+    "soccer": {"soccer", "mls", "uefa", "epl"},
+    "f1": {"f1", "formula"},
+}
+_SUFFIX = {"jr", "sr", "ii", "iii", "iv"}
+
+
+def _other_sport(t: str, sport: str | None) -> bool:
+    """A Fanatical from Topps Chrome Football is not the basketball one."""
+    if not sport or sport.lower() not in _SPORT_WORDS:
+        return False
+    mine = _SPORT_WORDS[sport.lower()]
+    words = set(t.split())
+    return any(words & ws for k, ws in _SPORT_WORDS.items() if k != sport.lower() and not (ws & mine)) and not (words & mine - {"wnba"})
+
+
+_NOT_NAMES = set(
+    "topps chrome panini prizm select optic bowman donruss rc rookie rookies ssp sp case hit hits insert inserts refractor "
+    "parallel card cards nba basketball baseball football f1 sp ssp short print variation var gem mint psa bgs sgc cgc raw "
+    "new hot lot the and of a w with auto autograph serial numbered".split()
+)
+
+
+def _words(s: str) -> list[str]:
+    return re.sub(r"[^a-z0-9/]+", " ", ascii_fold(s).lower()).split()
+
+
+def _seq_at(words: list[str], seq: list[str]) -> int:
+    for i in range(len(words) - len(seq) + 1):
+        if words[i : i + len(seq)] == seq:
+            return i
+    return -1
+
+
+def _name_in(t: str, compact: str, player: str, context: set[str] = frozenset()) -> bool:
+    """The card's player, not a namesake: 'Dylan Harper' is not 'Bryce Harper', and a
+    Robinson from another sport is not David Robinson. Sellers often drop famous first names
+    ('Topps Chrome Wembanyama') or last names ('Giannis'), so either alone counts as long as
+    no other first name is written next to it."""
+    parts = [w for w in _words(player) if w not in _SUFFIX]
+    if not parts:
+        return False
+    words = t.split()
+    first, last = parts[0], parts[1:] or parts
+    nonname = _NOT_NAMES | context
+
+    def is_nonname(w: str) -> bool:
+        return w in nonname or any(ch.isdigit() for ch in w) or len(w) <= 1
+
+    initials = "".join(p[0] for p in _words(" ".join(parts).replace("-", " ")))
+
+    def first_ok(w: str) -> bool:
+        return w == first or (len(initials) >= 3 and w == initials) or (len(w) >= 3 and (first.startswith(w) or w.startswith(first[:4])))
+
+    i = _seq_at(words, last)
+    if i < 0 and _compact("".join(last)) in compact:  # 'Gilgeous-Alexander' written 'GilgeousAlexander', "O'Neal" as 'ONeal'
+        i = next((k for k, w in enumerate(words) if _compact("".join(last)).startswith(w) and _compact("".join(words[k : k + len(last) + 1])).startswith(_compact("".join(last)))), -1)
+    if i >= 0:
+        if len(parts) == 1 or any(first_ok(w) for w in words):
+            return True
+        # No first name: the words around the surname must not be another player's name
+        # ('Topps Chrome Wembanyama Fanatical' yes; 'Allen Iverson' is not Ray Allen).
+        after = i + len(last)
+        return (i == 0 or is_nonname(words[i - 1])) and (after >= len(words) or is_nonname(words[after]))
+    # Last name missing: a distinctive first name on its own ('Giannis', 'Wemby' is not handled).
+    j = next((k for k, w in enumerate(words) if w == first), -1)
+    return len(first) >= 6 and j >= 0 and (j + 1 >= len(words) or is_nonname(words[j + 1]))
+
+
+def title_matches(
+    title: str,
+    *,
+    insert: str,
+    player: str,
+    parallel: str,
+    print_run: int | None,
+    other_parallels: list[str],
+    sport: str | None = None,
+    team: str | None = None,
+) -> bool:
     """Is this sold listing the checklist card in the asked-for parallel?"""
     t = " " + re.sub(r"[^a-z0-9/]+", " ", ascii_fold(title).lower()) + " "
     compact = _compact(title)
     if _SET_JUNK.search(t):
         return False
-    last = _compact(player.split()[-1] if player.split()[-1].lower() not in {"jr", "jr.", "ii", "iii", "iv"} else player.split()[-2])
-    if last not in compact:
+    context = set(_words(insert)) | {w for p in other_parallels for w in _words(p)} | set(_words(team or ''))
+    if not _name_in(t, compact, player, context) or _other_sport(t, sport):
         return False
     if _compact(insert_keyword(insert)) not in compact:
         return False
@@ -240,7 +324,7 @@ def price_check(db: Session, card_id: int, parallel_id: int, force: bool = False
     row = db.execute(
         text(
             "SELECT c.id, c.number, c.player, c.team, c.rookie, c.image_url, i.id AS insert_id, i.name AS insert, "
-            "p.year, p.set_name, p.sport, p.brand, par.name AS parallel, par.print_run "
+            "c.image_locked, p.year, p.set_name, p.sport, p.brand, par.name AS parallel, par.print_run "
             "FROM set_insert_card c JOIN set_insert i ON i.id = c.insert_id JOIN set_product p ON p.id = i.product_id "
             "JOIN set_insert_parallel par ON par.id = :par AND par.insert_id = i.id WHERE c.id = :c"
         ),
@@ -263,7 +347,9 @@ def price_check(db: Session, card_id: int, parallel_id: int, force: bool = False
         {k: r[k] for k in ("item_id", "title", "price", "shipping", "total", "date", "url", "image", "best_offer", "grade")}
         for r in data["items"]
         if r["date"]
-        and title_matches(r["title"], insert=row["insert"], player=row["player"], parallel=row["parallel"], print_run=row["print_run"], other_parallels=others)
+        and title_matches(
+            r["title"], insert=row["insert"], player=row["player"], parallel=row["parallel"], print_run=row["print_run"], other_parallels=others, sport=row["sport"], team=row["team"]
+        )
     ]
     items.sort(key=lambda r: r["date"], reverse=True)
     result = {
@@ -282,10 +368,11 @@ def price_check(db: Session, card_id: int, parallel_id: int, force: bool = False
         ),
         {"c": card_id, "p": parallel_id, "q": q, "r": json.dumps(result)},
     )
-    # First photo of the base insert becomes the checklist picture.
-    photo = next((r["image"] for r in items if r.get("image")), None)
-    if photo and (not row["image_url"] or row["parallel"].lower() == "base"):
-        db.execute(text("UPDATE set_insert_card SET image_url = :u WHERE id = :c AND (image_url IS NULL OR :base)"), {"u": photo, "c": card_id, "base": row["parallel"].lower() == "base"})
+    # No photo yet: the best-looking one from these sales (prefer the base insert's).
+    if not row["image_url"] and not row["image_locked"] and any(r.get("image") for r in items):
+        pick = card_photo.best_photo(items)
+        if pick:
+            _set_photo(db, card_id, pick)
     db.commit()
     return {**result, "cached": False, "fetched_at": datetime.now(timezone.utc).isoformat()}
 
@@ -301,17 +388,20 @@ def load_photos(db: Session, insert_id: int, force: bool = False) -> dict:
 
     ins = db.execute(
         text(
-            "SELECT i.id, i.name, i.photos_checked_at, p.year, p.set_name FROM set_insert i "
+            "SELECT i.id, i.name, i.photos_checked_at, p.year, p.set_name, p.sport FROM set_insert i "
             "JOIN set_product p ON p.id = i.product_id WHERE i.id = :i"
         ),
         {"i": insert_id},
     ).mappings().first()
     if not ins:
         raise LookupError("insert not found")
-    cards = list(db.execute(text("SELECT id, player, image_url FROM set_insert_card WHERE insert_id = :i"), {"i": insert_id}).mappings())
-    missing = [c for c in cards if not c["image_url"]]
-    if not missing or (ins["photos_checked_at"] and not force):
-        return {"source": None, "searched": 0, "added": 0, "missing": len(missing), "skipped": True}
+    cards = list(
+        db.execute(text("SELECT id, player, team, image_url, image_locked FROM set_insert_card WHERE insert_id = :i ORDER BY sort"), {"i": insert_id}).mappings()
+    )
+    # force (Re-pick): every card that the owner didn't pick by hand; otherwise only cards with no photo.
+    todo = [c for c in cards if not c["image_locked"] and (force or not c["image_url"])]
+    if not todo or (ins["photos_checked_at"] and not force):
+        return {"source": None, "searched": 0, "added": 0, "missing": sum(1 for c in cards if not c["image_url"]), "skipped": True}
 
     q = f"{ins['year']} {ins['set_name']} {insert_keyword(ins['name'])}"
     source, items = None, []
@@ -330,17 +420,45 @@ def load_photos(db: Session, insert_id: int, force: bool = False) -> dict:
             source = "compsapi"
 
     others = [r[0] for r in db.execute(text("SELECT name FROM set_insert_parallel WHERE insert_id = :i"), {"i": insert_id})]
+    with_photo = [it for it in items if it.get("image")]
+
+    def candidates(player: str, team: str | None) -> list[dict]:
+        kw = dict(insert=ins["name"], player=player, print_run=None, other_parallels=others, sport=ins["sport"], team=team)
+        base = [it for it in with_photo if title_matches(it["title"], parallel="Base", **kw)]
+        # A numbered parallel shows the same design in another colour: only when there's no base photo.
+        par = [it for it in with_photo if it not in base and any(title_matches(it["title"], parallel=p, **kw) for p in others if p.lower() != "base")]
+        return base + par
+
+    work = [(c, candidates(c["player"], c["team"])) for c in todo]
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        picks = list(pool.map(lambda cw: card_photo.best_photo(cw[1]) if cw[1] else None, work))
     added = 0
-    for c in missing:
-        kw = dict(insert=ins["name"], player=c["player"], print_run=None, other_parallels=others)
-        with_photo = [it for it in items if it.get("image")]
-        # Prefer a photo of the base insert; a numbered parallel shows the same design in another colour.
-        hit = next((it for it in with_photo if title_matches(it["title"], parallel="Base", **kw)), None) or next(
-            (it for it in with_photo if any(title_matches(it["title"], parallel=p, **kw) for p in others if p.lower() != "base")), None
-        )
-        if hit:
-            db.execute(text("UPDATE set_insert_card SET image_url = :u WHERE id = :c AND image_url IS NULL"), {"u": hit["image"], "c": c["id"]})
+    for (c, _), pick in zip(work, picks):
+        if pick:
+            _set_photo(db, c["id"], pick)
             added += 1
     db.execute(text("UPDATE set_insert SET photos_checked_at = NOW() WHERE id = :i"), {"i": insert_id})
     db.commit()
-    return {"source": source, "searched": len(items), "added": added, "missing": len(missing) - added, "skipped": False}
+    missing = db.execute(text("SELECT COUNT(*) FROM set_insert_card WHERE insert_id = :i AND image_url IS NULL"), {"i": insert_id}).scalar()
+    return {"source": source, "searched": len(items), "added": added, "missing": missing, "skipped": False}
+
+
+def _set_photo(db: Session, card_id: int, pick: dict, locked: bool = False) -> None:
+    db.execute(
+        text("UPDATE set_insert_card SET image_url = :u, image_crop = CAST(:c AS JSONB), image_locked = :l, photo_rev = 2 WHERE id = :id"),
+        {"u": pick["url"], "c": json.dumps(pick.get("crop")), "l": locked, "id": card_id},
+    )
+
+
+def choose_photo(db: Session, card_id: int, url: str | None) -> dict:
+    """The owner picks a photo (from the card's sales) — or clears it with url=None."""
+    if not db.execute(text("SELECT 1 FROM set_insert_card WHERE id = :c"), {"c": card_id}).scalar():
+        raise LookupError("card not found")
+    if url is None:
+        db.execute(text("UPDATE set_insert_card SET image_url = NULL, image_crop = NULL, image_locked = TRUE WHERE id = :c"), {"c": card_id})
+        db.commit()
+        return {"url": None, "crop": None}
+    pick = card_photo.best_photo([{"image": url, "title": ""}]) or {"url": card_photo.display_url(url), "crop": None}
+    _set_photo(db, card_id, pick, locked=True)
+    db.commit()
+    return {"url": pick["url"], "crop": pick.get("crop")}

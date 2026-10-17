@@ -79,6 +79,21 @@ def photos(insert_id: int, force: bool = False, db: Session = Depends(get_db)):
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
+class PhotoIn(BaseModel):
+    url: str | None = Field(default=None, max_length=1000)
+
+
+@router.put("/cards/{card_id}/photo")
+def choose_photo(card_id: int, body: PhotoIn, db: Session = Depends(get_db)):
+    """Use this photo for the card (picked by the owner; automatic lookups won't replace it)."""
+    if body.url and not body.url.startswith(("https://", "http://")):
+        raise HTTPException(status_code=422, detail="Photo must be a web link")
+    try:
+        return set_guide.choose_photo(db, card_id, body.url)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 class ImportIn(BaseModel):
     name: str = Field(min_length=6, max_length=150)
     checklist_url: str | None = Field(default=None, max_length=500)

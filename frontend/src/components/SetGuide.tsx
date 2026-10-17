@@ -18,6 +18,7 @@ import {
   type SetProduct,
 } from '@/lib/sets';
 
+import { CardPhoto } from './SetCardImage';
 import { SetImportForm } from './SetImportForm';
 import { SetPricePanel } from './SetPricePanel';
 
@@ -409,16 +410,15 @@ function InsertDetail({
           </button>
           <span className="text-[12px] text-muted">Click a card to look up its sold prices.</span>
         </div>
-        {(photoMsg || (missing > 0 && ins.photos_checked_at)) && (
-          <p className="flex flex-wrap items-center gap-2 text-[12px] text-muted">
-            {photoMsg ?? `${missing} card${missing === 1 ? '' : 's'} without a photo.`}
-            {missing > 0 && ins.photos_checked_at && !photoBusy && (
-              <button type="button" className="text-link hover:text-ink" onClick={() => findPhotos(true)}>
-                Search again for photos (1 search)
-              </button>
-            )}
-          </p>
-        )}
+        <p className="flex flex-wrap items-center gap-2 text-[12px] text-muted">
+          {photoMsg ?? (missing > 0 && ins.photos_checked_at ? `${missing} card${missing === 1 ? '' : 's'} without a photo.` : null)}
+          {ins.photos_checked_at && !photoBusy && (
+            <button type="button" className="text-link hover:text-ink" onClick={() => findPhotos(true)} title="Look up photos again for every card you haven't picked a photo for">
+              Re-pick photos (1 search)
+            </button>
+          )}
+          <span>Wrong photo? Open the card and choose one of its sales’ photos.</span>
+        </p>
 
         {n === 0 ? (
           <p className="text-[13px] text-muted">{ins.note ?? 'No checklist yet.'}</p>
@@ -475,6 +475,7 @@ function InsertDetail({
           parallel={par}
           onParallel={setParId}
           onResult={(r, pid) => onPriced(open.id, pid, r)}
+          onPhotoChanged={onReload}
           onClose={() => setOpen(null)}
         />
       )}
@@ -484,18 +485,17 @@ function InsertDetail({
 
 /** Card photo, or the number and name when there's none (or it fails to load). */
 function TileImage({ card }: { card: SetCard }) {
-  const [failed, setFailed] = useState<string | null>(null);
-  if (card.image_url && failed !== card.image_url) {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element -- remote eBay images
-      <img src={card.image_url} alt="" loading="lazy" onError={() => setFailed(card.image_url)} className="aspect-[5/7] w-full object-contain" />
-    );
-  }
   return (
-    <div className="flex aspect-[5/7] flex-col items-center justify-center gap-1 p-2 text-center">
-      <span className="font-mono text-[12px] text-muted">{card.number}</span>
-      <span className="text-[13px] font-bold text-ink">{card.player}</span>
-      <span className="text-[11px] text-muted">{card.image_url ? 'photo unavailable' : 'no photo yet'}</span>
-    </div>
+    <CardPhoto
+      src={card.image_url}
+      crop={card.image_crop}
+      fallback={
+        <div className="flex aspect-[5/7] flex-col items-center justify-center gap-1 p-2 text-center">
+          <span className="font-mono text-[12px] text-muted">{card.number}</span>
+          <span className="text-[13px] font-bold text-ink">{card.player}</span>
+          <span className="text-[11px] text-muted">{card.image_url ? 'photo unavailable' : 'no photo yet'}</span>
+        </div>
+      }
+    />
   );
 }

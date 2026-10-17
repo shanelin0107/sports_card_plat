@@ -8,6 +8,7 @@ import { parallelLabel, type PriceResult, type SetCard, type SetInsert, type Set
 import type { CompsApiStatus } from '@/lib/types';
 
 import { AddFromListing } from './AddFromListing';
+import { CardPhoto } from './SetCardImage';
 import type { SearchListing } from './EbaySearch';
 
 const FILTERS = [
@@ -24,6 +25,9 @@ function keep(filter: string, grade: string) {
   return grade.replace(' ', '').toLowerCase() === filter;
 }
 
+/** Same eBay photo at a different size (…/s-l225.jpg vs …/s-l500.jpg)? */
+const samePhoto = (a: string | null, b: string | null) => Boolean(a && b && a.replace(/\/s-l\d+\./, '/') === b.replace(/\/s-l\d+\./, '/'));
+
 function median(xs: number[]) {
   if (!xs.length) return null;
   const s = [...xs].sort((a, b) => a - b);
@@ -39,6 +43,7 @@ export function SetPricePanel({
   parallel,
   onParallel,
   onResult,
+  onPhotoChanged,
   onClose,
 }: {
   product: SetProduct;
@@ -47,6 +52,7 @@ export function SetPricePanel({
   parallel: SetParallel;
   onParallel: (id: number) => void;
   onResult: (r: PriceResult, parallelId: number) => void;
+  onPhotoChanged: () => Promise<void>;
   onClose: () => void;
 }) {
   const [res, setRes] = useState<PriceResult | null>(null);
@@ -56,6 +62,21 @@ export function SetPricePanel({
   const [quota, setQuota] = useState<CompsApiStatus | null>(null);
   const [adding, setAdding] = useState<SearchListing | null>(null);
   const ref = useRef<HTMLDivElement | null>(null);
+  const [photo, setPhoto] = useState<{ url: string | null; crop: number[] | null }>({ url: card.image_url, crop: card.image_crop });
+  const [photoBusy, setPhotoBusy] = useState<string | null>(null);
+
+  async function choosePhoto(url: string) {
+    setPhotoBusy(url);
+    try {
+      const r = await api<{ url: string | null; crop: number[] | null }>(`/sets/cards/${card.id}/photo`, { method: 'PUT', body: JSON.stringify({ url }) });
+      setPhoto(r);
+      await onPhotoChanged();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setPhotoBusy(null);
+    }
+  }
 
   function load(force: boolean) {
     setBusy(true);
@@ -125,9 +146,10 @@ export function SetPricePanel({
 
         <div className="space-y-4 p-4">
           <div className="flex gap-4">
-            {(card.image_url || last?.image) && (
-              // eslint-disable-next-line @next/next/no-img-element -- remote eBay images
-              <img src={(card.image_url || last?.image) ?? ''} alt="" className="aspect-[5/7] w-[120px] shrink-0 rounded border border-edge bg-base object-contain" />
+            {(photo.url || last?.image) && (
+              <div className="w-[120px] shrink-0 overflow-hidden rounded border border-edge bg-base">
+                <CardPhoto src={photo.url ?? last?.image ?? null} crop={photo.url ? photo.crop : null} fallback={null} />
+              </div>
             )}
             <div className="min-w-0 space-y-2">
               <p className="text-[13px]">
@@ -240,7 +262,19 @@ export function SetPricePanel({
                           {i.best_offer ? ' · best offer' : ''}
                         </p>
                       </div>
-                      <b className="shrink-0 font-mono text-[14px]">{money(i.total)}</b>
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        <b className="font-mono text-[14px]">{money(i.total)}</b>
+                        {i.image && (
+                          <button
+                            type="button"
+                            className="text-[11px] text-link hover:text-ink disabled:text-muted"
+                            disabled={photoBusy !== null || samePhoto(photo.url, i.image)}
+                            onClick={() => choosePhoto(i.image!)}
+                          >
+                            {photoBusy === i.image ? 'Saving…' : samePhoto(photo.url, i.image) ? '✓ Card photo' : 'Use as card photo'}
+                          </button>
+                        )}
+                      </div>
                     </li>
                   ))}
                 </ul>

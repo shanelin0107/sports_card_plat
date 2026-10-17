@@ -10,6 +10,8 @@ export type SetCard = {
   team: string | null;
   rookie: boolean;
   image_url: string | null;
+  image_crop: number[] | null;
+  image_locked: boolean;
   owned: number;
   prices: Record<string, CardPrice>; // by parallel id
 };

@@ -242,3 +242,85 @@ def test_photos_for_a_whole_insert_from_one_search(client, monkeypatch):
     assert again["skipped"] and len(fake.calls) == 1  # once per insert
     client.post(f"/api/v1/sets/inserts/{fan['id']}/photos", params={"force": True})
     assert len(fake.calls) == 2
+
+
+@pytest.fixture(autouse=True)
+def no_photo_downloads(monkeypatch):
+    """Tests never fetch real images; individual tests hand in their own."""
+    from app.services import card_photo
+
+    monkeypatch.setattr(card_photo, "_download", lambda url: None)
+
+
+@pytest.mark.parametrize(
+    "title,player,ok",
+    [
+        ("2025-26 Topps Chrome Wembanyama Fanatical SSP", "Victor Wembanyama", True),  # famous: no first name
+        ("2025 Topps Chrome Bryce Harper Fanatical Phillies", "Dylan Harper", False),  # a namesake
+        ("2025 Topps Chrome Dylan Harper Fanatical RC Spurs", "Dylan Harper", True),
+        ("2025 Topps Chrome Football Bijan Robinson Fanatical", "David Robinson", False),
+        ("2025-26 Topps Chrome Giannis Fanatical SSP", "Giannis Antetokounmpo", True),
+        ("2025-26 Topps Chrome Shaq O'Neal Fanatical", "Shaquille O'Neal", True),
+        ("2025-26 Topps Chrome SGA Gilgeous Alexander Fanatical", "Shai Gilgeous-Alexander", True),
+        ("Walter Clayton Jr 2025-26 Topps Chrome Fanatical RC", "Walter Clayton Jr.", True),
+        ("2025 Topps Chrome Baseball Fanatical Kon Knueppel", "Kon Knueppel", False),  # other sport
+    ],
+)
+def test_player_names_and_sport(title, player, ok):
+    assert set_guide.title_matches(title, insert="Fanatical", player=player, parallel="Base", print_run=None, other_parallels=["Base", "Gold"], sport="Basketball") is ok
+
+
+def _img(w, h, card_box=None, bg=(250, 250, 250), card=(30, 60, 160)):
+    import io
+
+    from PIL import Image, ImageDraw
+
+    im = Image.new("RGB", (w, h), bg if card_box else card)
+    d = ImageDraw.Draw(im)
+    if card_box:
+        d.rectangle(card_box, fill=card)
+        d.rectangle((card_box[0] + 10, card_box[1] + 10, card_box[2] - 10, card_box[3] - 40), fill=(200, 80, 40))
+    else:
+        d.rectangle((20, 20, w - 20, h - 60), fill=(200, 80, 40))
+    o = io.BytesIO()
+    im.save(o, "PNG")
+    return o.getvalue()
+
+
+def test_photo_scoring_prefers_upright_cards_and_crops_them():
+    from app.services import card_photo
+
+    scan = card_photo.analyze(_img(500, 700))  # card fills the frame
+    on_table = card_photo.analyze(_img(700, 700, (200, 100, 500, 520)))  # upright card on a plain background
+    sideways = card_photo.analyze(_img(700, 500, (100, 120, 600, 420)))  # lying sideways
+    assert on_table["crop"] and abs(on_table["crop"][0] - 200 / 700) < 0.03 and abs(on_table["crop"][3] - 520 / 700) < 0.03
+    assert scan["score"] > sideways["score"] and on_table["score"] > sideways["score"]
+    imgs = {"a": _img(700, 500, (100, 120, 600, 420)), "b": _img(700, 700, (200, 100, 500, 520))}
+    pick = card_photo.best_photo([{"image": "a", "title": "x"}, {"image": "b", "title": "y"}], download=imgs.get)
+    assert pick["url"] == "b" and pick["crop"]
+
+
+def test_owner_can_pick_a_photo_and_repick_keeps_it(client, monkeypatch):
+    from app.core.config import settings
+    from app.services import compsapi
+
+    monkeypatch.setattr(settings, "compsapi_key", "sk_test")
+    monkeypatch.setattr(settings, "ebay_client_id", "")
+    monkeypatch.setattr(compsapi, "fetch_sold", _fake_sold([
+        _row(1, "2025-26 Topps Chrome Victor Wembanyama Fanatical SSP", 150.0, "2026-10-10", "https://i.ebayimg.com/auto.jpg"),
+    ]))
+    pid = client.get("/api/v1/sets").json()[0]["id"]
+    fan = next(i for i in client.get(f"/api/v1/sets/{pid}").json()["inserts"] if i["name"] == "Fanatical")
+    wemby = fan["cards"][0]
+    r = client.put(f"/api/v1/sets/cards/{wemby['id']}/photo", json={"url": "https://i.ebayimg.com/mine.jpg"})
+    assert r.status_code == 200
+    client.post(f"/api/v1/sets/inserts/{fan['id']}/photos", params={"force": True})
+    card = next(c for i in client.get(f"/api/v1/sets/{pid}").json()["inserts"] if i["name"] == "Fanatical" for c in i["cards"] if c["id"] == wemby["id"])
+    assert card["image_url"] == "https://i.ebayimg.com/mine.jpg" and card["image_locked"]
+    assert client.put(f"/api/v1/sets/cards/{wemby['id']}/photo", json={"url": "javascript:alert(1)"}).status_code == 422
+
+
+def test_surname_that_is_someone_elses_first_name():
+    kw = dict(insert="Fanatical", parallel="Base", print_run=None, other_parallels=["Base"], sport="Basketball")
+    assert not set_guide.title_matches("2025-26 Topps Chrome Allen Iverson Fanatical SSP", player="Ray Allen", team="Seattle Supersonics", **kw)
+    assert set_guide.title_matches("2025-26 Topps Chrome Wembanyama Spurs Fanatical", player="Victor Wembanyama", team="San Antonio Spurs", **kw)
