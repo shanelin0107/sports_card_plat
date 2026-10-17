@@ -7,6 +7,7 @@ from app.api.v1.collection import router as collection_router
 from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.internal.ingestion import router as ingestion_router
 from app.api.v1.market import router as market_router
+from app.api.v1.sets import router as sets_router
 from app.api.v1.valuations import router as valuations_router
 
 api_router = APIRouter()
@@ -18,3 +19,4 @@ api_router.include_router(dashboard_router)
 api_router.include_router(ingestion_router)
 api_router.include_router(ai_router)
 api_router.include_router(market_router)
+api_router.include_router(sets_router)

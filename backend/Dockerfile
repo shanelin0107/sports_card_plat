@@ -7,6 +7,8 @@ WORKDIR /srv/backend
 
 COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
+# Headless Chromium for the set-guide importer (reads checklist / odds pages).
+RUN python -m playwright install --with-deps chromium
 
 COPY backend/app ./app
 COPY scripts /srv/scripts

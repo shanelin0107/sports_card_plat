@@ -77,3 +77,14 @@ What it does:
   Only exact matches are saved; other parallels, other grades, lots and reprints are skipped.
   Prices include shipping; Best Offer sales use the real accepted price.
 - Wrong sale saved? Open the card and use **Wrong sale?** to remove it; it won't come back.
+
+## Insert & SSP guide (Sets tab)
+
+- `/sets` lists products; each product page shows its SSP inserts with pack odds per box type
+  (Hobby / Jumbo / Value / Mega), chance per box, and a checklist you can click to price.
+- 2025-26 Topps Chrome Basketball is built in (`seed/sets/*.json`, loaded once on startup).
+- **Re-import** reads a checklist page and an odds page with Playwright (headless Chromium is
+  installed in the backend image — it adds ~400 MB). Sites that answer with a bot check are
+  reported, not bypassed.
+- Clicking a card uses 1 CompsAPI search; the result is kept 7 days per card + parallel
+  (`set_price_cache`), so reopening it is free. ↻ Refresh searches again.

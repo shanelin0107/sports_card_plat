@@ -14,7 +14,7 @@ import type { Holding } from '@/lib/types';
 import type { SearchListing } from './EbaySearch';
 import { SalesGrid, emptyRow, saveSales, validRows, type SaleRow } from './SalesGrid';
 
-type CardFields = {
+export type CardFields = {
   sport: string | null;
   year: number | null;
   brand: string | null;
@@ -68,7 +68,16 @@ const today = () => {
 };
 
 /** Dialog: confirm the card details eBay gave us, enter what you paid, add to collection. */
-export function AddFromListing({ listing, onClose }: { listing: SearchListing; onClose: () => void }) {
+export function AddFromListing({
+  listing,
+  onClose,
+  card,
+}: {
+  listing: SearchListing;
+  onClose: () => void;
+  /** Known card details (e.g. from a set checklist): override what the title suggests. */
+  card?: Partial<CardFields>;
+}) {
   const [item, setItem] = useState<Item | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -87,8 +96,9 @@ export function AddFromListing({ listing, onClose }: { listing: SearchListing; o
 
   useEffect(() => {
     ref.current?.focus();
-    if (listing.sold) {
-      setItem(itemFromTitle(listing));
+    if (listing.sold || card) {
+      const it = itemFromTitle(listing);
+      setItem(card ? { ...it, card: { ...it.card, ...card } } : it);
       return;
     }
     api<Item>(`/market/ebay/item/${encodeURIComponent(listing.item_id)}`)
@@ -223,7 +233,9 @@ export function AddFromListing({ listing, onClose }: { listing: SearchListing; o
             {c && (
               <form onSubmit={submit} className="min-w-[280px] flex-1 space-y-4">
                 <p className="text-[12px] text-muted">
-                  {item?.fromTitle
+                  {card
+                    ? 'Filled from the set checklist — set the grade and what you paid.'
+                    : item?.fromTitle
                     ? 'Filled from the listing title — check each field, especially set, number and parallel.'
                     : 'Filled from the seller’s item specifics — check them; sellers sometimes get these wrong.'}
                 </p>

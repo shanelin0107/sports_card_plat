@@ -47,3 +47,10 @@ def bootstrap_database() -> None:
         if empty:
             _exec_script(SEED_SQL)
             logger.info("Loaded demo seed data")
+
+    # Built-in insert / SSP set guides (seed/sets/*.json), added once.
+    from app.db.session import SessionLocal
+    from app.services.set_guide import load_seeds
+
+    with SessionLocal() as db:
+        load_seeds(db)

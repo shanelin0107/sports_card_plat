@@ -302,3 +302,68 @@ CREATE TABLE IF NOT EXISTS market_fetch_log (
   fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_market_fetch_log_card ON market_fetch_log(card_id, grade, source, fetched_at DESC);
+
+-- v0.7: insert / SSP set guide. A product (e.g. 2025-26 Topps Chrome Basketball) has box
+-- types and insert sets; each insert has a checklist and parallels with pack odds per box.
+CREATE TABLE IF NOT EXISTS set_product (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(150) NOT NULL UNIQUE,
+  sport VARCHAR(50) NOT NULL,
+  year INT NOT NULL,
+  brand VARCHAR(100) NOT NULL,
+  set_name VARCHAR(150) NOT NULL,
+  checklist_url TEXT,
+  odds_url TEXT,
+  source_note TEXT,
+  imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS set_box_type (
+  id SERIAL PRIMARY KEY,
+  product_id INT NOT NULL REFERENCES set_product(id) ON DELETE CASCADE,
+  name VARCHAR(50) NOT NULL,
+  packs_per_box INT,
+  cards_per_pack INT,
+  boxes_per_case INT,
+  sort INT NOT NULL DEFAULT 0,
+  UNIQUE (product_id, name)
+);
+CREATE TABLE IF NOT EXISTS set_insert (
+  id SERIAL PRIMARY KEY,
+  product_id INT NOT NULL REFERENCES set_product(id) ON DELETE CASCADE,
+  name VARCHAR(100) NOT NULL,
+  code VARCHAR(20),
+  kind VARCHAR(20) NOT NULL DEFAULT 'ssp',
+  note TEXT,
+  sort INT NOT NULL DEFAULT 0,
+  UNIQUE (product_id, name)
+);
+CREATE TABLE IF NOT EXISTS set_insert_parallel (
+  id SERIAL PRIMARY KEY,
+  insert_id INT NOT NULL REFERENCES set_insert(id) ON DELETE CASCADE,
+  name VARCHAR(100) NOT NULL,
+  print_run INT,
+  odds JSONB NOT NULL DEFAULT '{}'::jsonb,
+  sort INT NOT NULL DEFAULT 0,
+  UNIQUE (insert_id, name)
+);
+CREATE TABLE IF NOT EXISTS set_insert_card (
+  id SERIAL PRIMARY KEY,
+  insert_id INT NOT NULL REFERENCES set_insert(id) ON DELETE CASCADE,
+  number VARCHAR(30) NOT NULL,
+  player VARCHAR(150) NOT NULL,
+  team VARCHAR(100),
+  rookie BOOLEAN NOT NULL DEFAULT FALSE,
+  image_url TEXT,
+  sort INT NOT NULL DEFAULT 0,
+  UNIQUE (insert_id, number)
+);
+-- Sold-price lookups for a checklist card+parallel, kept 7 days so revisits cost no quota.
+CREATE TABLE IF NOT EXISTS set_price_cache (
+  id SERIAL PRIMARY KEY,
+  card_id INT NOT NULL REFERENCES set_insert_card(id) ON DELETE CASCADE,
+  parallel_id INT NOT NULL REFERENCES set_insert_parallel(id) ON DELETE CASCADE,
+  query TEXT NOT NULL,
+  result JSONB NOT NULL,
+  fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (card_id, parallel_id)
+);

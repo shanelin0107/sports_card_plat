@@ -1,0 +1,1633 @@
+{
+ "name": "2025-26 Topps Chrome Basketball",
+ "sport": "Basketball",
+ "year": 2025,
+ "brand": "Topps",
+ "set_name": "Topps Chrome",
+ "checklist_url": "https://www.checklistcenter.com/2025-26-topps-chrome-basketball-card-checklist/",
+ "odds_url": "https://www.beckett.com/news/2025-26-topps-chrome-basketball-case-hits-and-ssp-inserts-give-all-collectors-chances-for-a-big-pull/",
+ "source_note": "Checklist: Checklist Center. Insert odds: Beckett. Box configuration: Checklist Insider. Odds for numbered insert parallels and SuperFractors were not published.",
+ "box_types": [
+  {
+   "name": "Hobby",
+   "packs_per_box": 20,
+   "cards_per_pack": 4,
+   "boxes_per_case": 12
+  },
+  {
+   "name": "Jumbo",
+   "packs_per_box": 12,
+   "cards_per_pack": 11,
+   "boxes_per_case": 8
+  },
+  {
+   "name": "Value",
+   "packs_per_box": 7,
+   "cards_per_pack": 4,
+   "boxes_per_case": 40
+  },
+  {
+   "name": "Mega",
+   "packs_per_box": 7,
+   "cards_per_pack": 8,
+   "boxes_per_case": 20
+  }
+ ],
+ "inserts": [
+  {
+   "name": "Fanatical",
+   "code": "FAN",
+   "kind": "ssp",
+   "parallels": [
+    {
+     "name": "Base",
+     "print_run": null,
+     "odds": {
+      "Value": 290,
+      "Mega": 144
+     }
+    },
+    {
+     "name": "Gold",
+     "print_run": 50,
+     "odds": {}
+    },
+    {
+     "name": "Orange",
+     "print_run": 25,
+     "odds": {}
+    },
+    {
+     "name": "Red",
+     "print_run": 5,
+     "odds": {}
+    },
+    {
+     "name": "SuperFractor",
+     "print_run": 1,
+     "odds": {}
+    }
+   ],
+   "cards": [
+    {
+     "number": "FAN-1",
+     "player": "Victor Wembanyama",
+     "team": "San Antonio Spurs",
+     "rookie": false
+    },
+    {
+     "number": "FAN-2",
+     "player": "Giannis Antetokounmpo",
+     "team": "Milwaukee Bucks",
+     "rookie": false
+    },
+    {
+     "number": "FAN-3",
+     "player": "Brandon Miller",
+     "team": "Charlotte Hornets",
+     "rookie": false
+    },
+    {
+     "number": "FAN-4",
+     "player": "Ja Morant",
+     "team": "Memphis Grizzlies",
+     "rookie": false
+    },
+    {
+     "number": "FAN-5",
+     "player": "LaMelo Ball",
+     "team": "Charlotte Hornets",
+     "rookie": false
+    },
+    {
+     "number": "FAN-6",
+     "player": "Jaylen Brown",
+     "team": "Boston Celtics",
+     "rookie": false
+    },
+    {
+     "number": "FAN-7",
+     "player": "Cade Cunningham",
+     "team": "Detroit Pistons",
+     "rookie": false
+    },
+    {
+     "number": "FAN-8",
+     "player": "Kyrie Irving",
+     "team": "Dallas Mavericks",
+     "rookie": false
+    },
+    {
+     "number": "FAN-9",
+     "player": "Scoot Henderson",
+     "team": "Portland Trail Blazers",
+     "rookie": false
+    },
+    {
+     "number": "FAN-10",
+     "player": "Tyler Herro",
+     "team": "Miami Heat",
+     "rookie": false
+    },
+    {
+     "number": "FAN-11",
+     "player": "Jamal Murray",
+     "team": "Denver Nuggets",
+     "rookie": false
+    },
+    {
+     "number": "FAN-12",
+     "player": "Trae Young",
+     "team": "Atlanta Hawks",
+     "rookie": false
+    },
+    {
+     "number": "FAN-13",
+     "player": "Paolo Banchero",
+     "team": "Orlando Magic",
+     "rookie": false
+    },
+    {
+     "number": "FAN-14",
+     "player": "Stephen Curry",
+     "team": "Golden State Warriors",
+     "rookie": false
+    },
+    {
+     "number": "FAN-15",
+     "player": "Jimmy Butler III",
+     "team": "Golden State Warriors",
+     "rookie": false
+    },
+    {
+     "number": "FAN-16",
+     "player": "Shaquille O'Neal",
+     "team": "Los Angeles Lakers",
+     "rookie": false
+    },
+    {
+     "number": "FAN-17",
+     "player": "Larry Bird",
+     "team": "Boston Celtics",
+     "rookie": false
+    },
+    {
+     "number": "FAN-18",
+     "player": "Ray Allen",
+     "team": "Seattle Supersonics",
+     "rookie": false
+    },
+    {
+     "number": "FAN-19",
+     "player": "David Robinson",
+     "team": "San Antonio Spurs",
+     "rookie": false
+    },
+    {
+     "number": "FAN-20",
+     "player": "Allen Iverson",
+     "team": "Philadelphia 76ers",
+     "rookie": false
+    },
+    {
+     "number": "FAN-21",
+     "player": "Cooper Flagg",
+     "team": "Dallas Mavericks",
+     "rookie": true
+    },
+    {
+     "number": "FAN-22",
+     "player": "Dylan Harper",
+     "team": "San Antonio Spurs",
+     "rookie": true
+    },
+    {
+     "number": "FAN-23",
+     "player": "VJ Edgecombe",
+     "team": "Philadelphia 76ers",
+     "rookie": true
+    },
+    {
+     "number": "FAN-24",
+     "player": "Kon Knueppel",
+     "team": "Charlotte Hornets",
+     "rookie": true
+    },
+    {
+     "number": "FAN-25",
+     "player": "Ace Bailey",
+     "team": "Utah Jazz",
+     "rookie": true
+    }
+   ],
+   "note": null
+  },
+  {
+   "name": "Paradox",
+   "code": "PX",
+   "kind": "ssp",
+   "parallels": [
+    {
+     "name": "Base",
+     "print_run": null,
+     "odds": {
+      "Value": 933,
+      "Mega": 466
+     }
+    },
+    {
+     "name": "SuperFractor",
+     "print_run": 1,
+     "odds": {}
+    }
+   ],
+   "cards": [
+    {
+     "number": "PX-1",
+     "player": "Victor Wembanyama",
+     "team": "San Antonio Spurs",
+     "rookie": false
+    },
+    {
+     "number": "PX-2",
+     "player": "Anthony Edwards",
+     "team": "Minnesota Timberwolves",
+     "rookie": false
+    },
+    {
+     "number": "PX-3",
+     "player": "Austin Reaves",
+     "team": "Los Angeles Lakers",
+     "rookie": false
+    },
+    {
+     "number": "PX-4",
+     "player": "Jayson Tatum",
+     "team": "Boston Celtics",
+     "rookie": false
+    },
+    {
+     "number": "PX-5",
+     "player": "Shai Gilgeous-Alexander",
+     "team": "Oklahoma City Thunder",
+     "rookie": false
+    },
+    {
+     "number": "PX-6",
+     "player": "Nikola Jokić",
+     "team": "Denver Nuggets",
+     "rookie": false
+    },
+    {
+     "number": "PX-7",
+     "player": "Donovan Mitchell",
+     "team": "Cleveland Cavaliers",
+     "rookie": false
+    },
+    {
+     "number": "PX-8",
+     "player": "Stephen Curry",
+     "team": "Golden State Warriors",
+     "rookie": false
+    },
+    {
+     "number": "PX-9",
+     "player": "LeBron James",
+     "team": "Los Angeles Lakers",
+     "rookie": false
+    },
+    {
+     "number": "PX-10",
+     "player": "Giannis Antetokounmpo",
+     "team": "Milwaukee Bucks",
+     "rookie": false
+    },
+    {
+     "number": "PX-11",
+     "player": "Jalen Brunson",
+     "team": "New York Knicks",
+     "rookie": false
+    },
+    {
+     "number": "PX-12",
+     "player": "Tyrese Haliburton",
+     "team": "Indiana Pacers",
+     "rookie": false
+    },
+    {
+     "number": "PX-13",
+     "player": "Chet Holmgren",
+     "team": "Oklahoma City Thunder",
+     "rookie": false
+    },
+    {
+     "number": "PX-14",
+     "player": "Paolo Banchero",
+     "team": "Orlando Magic",
+     "rookie": false
+    },
+    {
+     "number": "PX-15",
+     "player": "Cade Cunningham",
+     "team": "Detroit Pistons",
+     "rookie": false
+    },
+    {
+     "number": "PX-16",
+     "player": "LaMelo Ball",
+     "team": "Charlotte Hornets",
+     "rookie": false
+    },
+    {
+     "number": "PX-17",
+     "player": "Kevin Durant",
+     "team": "Phoenix Suns",
+     "rookie": false
+    },
+    {
+     "number": "PX-18",
+     "player": "Kyrie Irving",
+     "team": "Dallas Mavericks",
+     "rookie": false
+    },
+    {
+     "number": "PX-19",
+     "player": "Scoot Henderson",
+     "team": "Portland Trail Blazers",
+     "rookie": false
+    },
+    {
+     "number": "PX-20",
+     "player": "Ja Morant",
+     "team": "Memphis Grizzlies",
+     "rookie": false
+    },
+    {
+     "number": "PX-21",
+     "player": "Cooper Flagg",
+     "team": "Dallas Mavericks",
+     "rookie": true
+    },
+    {
+     "number": "PX-22",
+     "player": "Dylan Harper",
+     "team": "San Antonio Spurs",
+     "rookie": true
+    },
+    {
+     "number": "PX-23",
+     "player": "VJ Edgecombe",
+     "team": "Philadelphia 76ers",
+     "rookie": true
+    },
+    {
+     "number": "PX-24",
+     "player": "Kon Knueppel",
+     "team": "Charlotte Hornets",
+     "rookie": true
+    },
+    {
+     "number": "PX-25",
+     "player": "Ace Bailey",
+     "team": "Utah Jazz",
+     "rookie": true
+    },
+    {
+     "number": "PX-26",
+     "player": "Tre Johnson III",
+     "team": "Washington Wizards",
+     "rookie": true
+    },
+    {
+     "number": "PX-27",
+     "player": "Jeremiah Fears",
+     "team": "New Orleans Pelicans",
+     "rookie": true
+    },
+    {
+     "number": "PX-28",
+     "player": "Khaman Maluach",
+     "team": "Phoenix Suns",
+     "rookie": true
+    },
+    {
+     "number": "PX-29",
+     "player": "Walter Clayton Jr.",
+     "team": "Utah Jazz",
+     "rookie": true
+    },
+    {
+     "number": "PX-30",
+     "player": "Jase Richardson",
+     "team": "Orlando Magic",
+     "rookie": true
+    }
+   ],
+   "note": null
+  },
+  {
+   "name": "Patented",
+   "code": "PD",
+   "kind": "ssp",
+   "parallels": [
+    {
+     "name": "Base",
+     "print_run": null,
+     "odds": {
+      "Value": 933,
+      "Mega": 466
+     }
+    },
+    {
+     "name": "SuperFractor",
+     "print_run": 1,
+     "odds": {}
+    }
+   ],
+   "cards": [
+    {
+     "number": "PD-1",
+     "player": "Tyrese Haliburton",
+     "team": "Indiana Pacers",
+     "rookie": false
+    },
+    {
+     "number": "PD-2",
+     "player": "Stephen Curry",
+     "team": "Golden State Warriors",
+     "rookie": false
+    },
+    {
+     "number": "PD-3",
+     "player": "Shai Gilgeous-Alexander",
+     "team": "Oklahoma City Thunder",
+     "rookie": false
+    },
+    {
+     "number": "PD-4",
+     "player": "Giannis Antetokounmpo",
+     "team": "Milwaukee Bucks",
+     "rookie": false
+    },
+    {
+     "number": "PD-5",
+     "player": "Nikola Jokić",
+     "team": "Denver Nuggets",
+     "rookie": false
+    },
+    {
+     "number": "PD-6",
+     "player": "Paolo Banchero",
+     "team": "Orlando Magic",
+     "rookie": false
+    },
+    {
+     "number": "PD-7",
+     "player": "Jayson Tatum",
+     "team": "Boston Celtics",
+     "rookie": false
+    },
+    {
+     "number": "PD-8",
+     "player": "Kevin Durant",
+     "team": "Phoenix Suns",
+     "rookie": false
+    },
+    {
+     "number": "PD-9",
+     "player": "Victor Wembanyama",
+     "team": "San Antonio Spurs",
+     "rookie": false
+    },
+    {
+     "number": "PD-10",
+     "player": "Anthony Davis",
+     "team": "Dallas Mavericks",
+     "rookie": false
+    },
+    {
+     "number": "PD-11",
+     "player": "LaMelo Ball",
+     "team": "Charlotte Hornets",
+     "rookie": false
+    },
+    {
+     "number": "PD-12",
+     "player": "Cade Cunningham",
+     "team": "Detroit Pistons",
+     "rookie": false
+    },
+    {
+     "number": "PD-13",
+     "player": "Jalen Brunson",
+     "team": "New York Knicks",
+     "rookie": false
+    },
+    {
+     "number": "PD-14",
+     "player": "Trae Young",
+     "team": "Atlanta Hawks",
+     "rookie": false
+    },
+    {
+     "number": "PD-15",
+     "player": "Anthony Edwards",
+     "team": "Minnesota Timberwolves",
+     "rookie": false
+    },
+    {
+     "number": "PD-16",
+     "player": "Cooper Flagg",
+     "team": "Dallas Mavericks",
+     "rookie": true
+    },
+    {
+     "number": "PD-17",
+     "player": "Dylan Harper",
+     "team": "San Antonio Spurs",
+     "rookie": true
+    },
+    {
+     "number": "PD-18",
+     "player": "VJ Edgecombe",
+     "team": "Philadelphia 76ers",
+     "rookie": true
+    },
+    {
+     "number": "PD-19",
+     "player": "Kon Knueppel",
+     "team": "Charlotte Hornets",
+     "rookie": true
+    },
+    {
+     "number": "PD-20",
+     "player": "Ace Bailey",
+     "team": "Utah Jazz",
+     "rookie": true
+    },
+    {
+     "number": "PD-21",
+     "player": "Tre Johnson III",
+     "team": "Washington Wizards",
+     "rookie": true
+    },
+    {
+     "number": "PD-22",
+     "player": "Jeremiah Fears",
+     "team": "New Orleans Pelicans",
+     "rookie": true
+    },
+    {
+     "number": "PD-23",
+     "player": "Egor Dëmin",
+     "team": "Brooklyn Nets",
+     "rookie": true
+    },
+    {
+     "number": "PD-24",
+     "player": "Collin Murray-Boyles",
+     "team": "Toronto Raptors",
+     "rookie": true
+    },
+    {
+     "number": "PD-25",
+     "player": "Khaman Maluach",
+     "team": "Phoenix Suns",
+     "rookie": true
+    },
+    {
+     "number": "PD-26",
+     "player": "Yang Hansen",
+     "team": "Portland Trail Blazers",
+     "rookie": true
+    },
+    {
+     "number": "PD-27",
+     "player": "Walter Clayton Jr.",
+     "team": "Utah Jazz",
+     "rookie": true
+    },
+    {
+     "number": "PD-28",
+     "player": "Asa Newell",
+     "team": "Atlanta Hawks",
+     "rookie": true
+    },
+    {
+     "number": "PD-29",
+     "player": "Jase Richardson",
+     "team": "Orlando Magic",
+     "rookie": true
+    },
+    {
+     "number": "PD-30",
+     "player": "Liam McNeeley",
+     "team": "Charlotte Hornets",
+     "rookie": true
+    }
+   ],
+   "note": null
+  },
+  {
+   "name": "Glass Canvas",
+   "code": "GC",
+   "kind": "ssp",
+   "parallels": [
+    {
+     "name": "Base",
+     "print_run": null,
+     "odds": {
+      "Value": 1400,
+      "Mega": 699
+     }
+    },
+    {
+     "name": "SuperFractor",
+     "print_run": 1,
+     "odds": {}
+    }
+   ],
+   "cards": [
+    {
+     "number": "GC-1",
+     "player": "LeBron James",
+     "team": "Los Angeles Lakers",
+     "rookie": false
+    },
+    {
+     "number": "GC-2",
+     "player": "Nikola Jokić",
+     "team": "Denver Nuggets",
+     "rookie": false
+    },
+    {
+     "number": "GC-3",
+     "player": "Giannis Antetokounmpo",
+     "team": "Milwaukee Bucks",
+     "rookie": false
+    },
+    {
+     "number": "GC-4",
+     "player": "Shai Gilgeous-Alexander",
+     "team": "Oklahoma City Thunder",
+     "rookie": false
+    },
+    {
+     "number": "GC-5",
+     "player": "Anthony Edwards",
+     "team": "Minnesota Timberwolves",
+     "rookie": false
+    },
+    {
+     "number": "GC-6",
+     "player": "Stephen Curry",
+     "team": "Golden State Warriors",
+     "rookie": false
+    },
+    {
+     "number": "GC-7",
+     "player": "Jayson Tatum",
+     "team": "Boston Celtics",
+     "rookie": false
+    },
+    {
+     "number": "GC-8",
+     "player": "Kevin Durant",
+     "team": "Phoenix Suns",
+     "rookie": false
+    },
+    {
+     "number": "GC-9",
+     "player": "LaMelo Ball",
+     "team": "Charlotte Hornets",
+     "rookie": false
+    },
+    {
+     "number": "GC-10",
+     "player": "Victor Wembanyama",
+     "team": "San Antonio Spurs",
+     "rookie": false
+    },
+    {
+     "number": "GC-11",
+     "player": "Shaquille O'Neal",
+     "team": "Los Angeles Lakers",
+     "rookie": false
+    },
+    {
+     "number": "GC-12",
+     "player": "Allen Iverson",
+     "team": "Philadelphia 76ers",
+     "rookie": false
+    },
+    {
+     "number": "GC-13",
+     "player": "Dirk Nowitzki",
+     "team": "Dallas Mavericks",
+     "rookie": false
+    },
+    {
+     "number": "GC-14",
+     "player": "Magic Johnson",
+     "team": "Los Angeles Lakers",
+     "rookie": false
+    },
+    {
+     "number": "GC-15",
+     "player": "Larry Bird",
+     "team": "Boston Celtics",
+     "rookie": false
+    },
+    {
+     "number": "GC-16",
+     "player": "Pascal Siakam",
+     "team": "Indiana Pacers",
+     "rookie": false
+    },
+    {
+     "number": "GC-17",
+     "player": "Jalen Brunson",
+     "team": "New York Knicks",
+     "rookie": false
+    },
+    {
+     "number": "GC-18",
+     "player": "Paolo Banchero",
+     "team": "Orlando Magic",
+     "rookie": false
+    },
+    {
+     "number": "GC-19",
+     "player": "Cade Cunningham",
+     "team": "Detroit Pistons",
+     "rookie": false
+    },
+    {
+     "number": "GC-20",
+     "player": "Donovan Mitchell",
+     "team": "Cleveland Cavaliers",
+     "rookie": false
+    }
+   ],
+   "note": null
+  },
+  {
+   "name": "Advisory",
+   "code": "AD",
+   "kind": "ssp",
+   "parallels": [
+    {
+     "name": "Base",
+     "print_run": null,
+     "odds": {
+      "Value": 1410,
+      "Mega": 709
+     }
+    },
+    {
+     "name": "SuperFractor",
+     "print_run": 1,
+     "odds": {}
+    }
+   ],
+   "cards": [
+    {
+     "number": "AD-1",
+     "player": "Cooper Flagg",
+     "team": "Dallas Mavericks",
+     "rookie": true
+    },
+    {
+     "number": "AD-2",
+     "player": "Dylan Harper",
+     "team": "San Antonio Spurs",
+     "rookie": true
+    },
+    {
+     "number": "AD-3",
+     "player": "VJ Edgecombe",
+     "team": "Philadelphia 76ers",
+     "rookie": true
+    },
+    {
+     "number": "AD-4",
+     "player": "Kon Knueppel",
+     "team": "Charlotte Hornets",
+     "rookie": true
+    },
+    {
+     "number": "AD-5",
+     "player": "Ace Bailey",
+     "team": "Utah Jazz",
+     "rookie": true
+    },
+    {
+     "number": "AD-6",
+     "player": "Tre Johnson III",
+     "team": "Washington Wizards",
+     "rookie": true
+    },
+    {
+     "number": "AD-7",
+     "player": "Jeremiah Fears",
+     "team": "New Orleans Pelicans",
+     "rookie": true
+    },
+    {
+     "number": "AD-8",
+     "player": "Egor Dëmin",
+     "team": "Brooklyn Nets",
+     "rookie": true
+    },
+    {
+     "number": "AD-9",
+     "player": "Collin Murray-Boyles",
+     "team": "Toronto Raptors",
+     "rookie": true
+    },
+    {
+     "number": "AD-10",
+     "player": "Khaman Maluach",
+     "team": "Phoenix Suns",
+     "rookie": true
+    },
+    {
+     "number": "AD-11",
+     "player": "Carter Bryant",
+     "team": "San Antonio Spurs",
+     "rookie": true
+    },
+    {
+     "number": "AD-12",
+     "player": "Walter Clayton Jr.",
+     "team": "Utah Jazz",
+     "rookie": true
+    },
+    {
+     "number": "AD-13",
+     "player": "Kasparas Jakučionis",
+     "team": "Miami Heat",
+     "rookie": true
+    },
+    {
+     "number": "AD-14",
+     "player": "Asa Newell",
+     "team": "Atlanta Hawks",
+     "rookie": true
+    },
+    {
+     "number": "AD-15",
+     "player": "Jase Richardson",
+     "team": "Orlando Magic",
+     "rookie": true
+    },
+    {
+     "number": "AD-16",
+     "player": "Hugo González",
+     "team": "Boston Celtics",
+     "rookie": true
+    },
+    {
+     "number": "AD-17",
+     "player": "Liam McNeeley",
+     "team": "Charlotte Hornets",
+     "rookie": true
+    },
+    {
+     "number": "AD-18",
+     "player": "Danny Wolf",
+     "team": "Brooklyn Nets",
+     "rookie": true
+    },
+    {
+     "number": "AD-19",
+     "player": "Noa Essengue",
+     "team": "Chicago Bulls",
+     "rookie": true
+    },
+    {
+     "number": "AD-20",
+     "player": "Yang Hansen",
+     "team": "Portland Trail Blazers",
+     "rookie": true
+    }
+   ],
+   "note": null
+  },
+  {
+   "name": "Rock Stars",
+   "code": "RS",
+   "kind": "ssp",
+   "parallels": [
+    {
+     "name": "Base",
+     "print_run": null,
+     "odds": {
+      "Hobby": 295,
+      "Jumbo": 147
+     }
+    },
+    {
+     "name": "SuperFractor",
+     "print_run": 1,
+     "odds": {}
+    }
+   ],
+   "cards": [
+    {
+     "number": "RS-1",
+     "player": "Jayson Tatum",
+     "team": "Boston Celtics",
+     "rookie": false
+    },
+    {
+     "number": "RS-2",
+     "player": "Victor Wembanyama",
+     "team": "San Antonio Spurs",
+     "rookie": false
+    },
+    {
+     "number": "RS-3",
+     "player": "LeBron James",
+     "team": "Los Angeles Lakers",
+     "rookie": false
+    },
+    {
+     "number": "RS-4",
+     "player": "Giannis Antetokounmpo",
+     "team": "Milwaukee Bucks",
+     "rookie": false
+    },
+    {
+     "number": "RS-5",
+     "player": "Cade Cunningham",
+     "team": "Detroit Pistons",
+     "rookie": false
+    },
+    {
+     "number": "RS-6",
+     "player": "Anthony Davis",
+     "team": "Dallas Mavericks",
+     "rookie": false
+    },
+    {
+     "number": "RS-7",
+     "player": "Nikola Jokić",
+     "team": "Denver Nuggets",
+     "rookie": false
+    },
+    {
+     "number": "RS-8",
+     "player": "Jaylen Brown",
+     "team": "Boston Celtics",
+     "rookie": false
+    },
+    {
+     "number": "RS-9",
+     "player": "Paolo Banchero",
+     "team": "Orlando Magic",
+     "rookie": false
+    },
+    {
+     "number": "RS-10",
+     "player": "Ja Morant",
+     "team": "Memphis Grizzlies",
+     "rookie": false
+    },
+    {
+     "number": "RS-11",
+     "player": "Magic Johnson",
+     "team": "Los Angeles Lakers",
+     "rookie": false
+    },
+    {
+     "number": "RS-12",
+     "player": "Dennis Rodman",
+     "team": "Chicago Bulls",
+     "rookie": false
+    },
+    {
+     "number": "RS-13",
+     "player": "Tracy McGrady",
+     "team": "Orlando Magic",
+     "rookie": false
+    },
+    {
+     "number": "RS-14",
+     "player": "Ben Wallace",
+     "team": "Detroit Pistons",
+     "rookie": false
+    },
+    {
+     "number": "RS-15",
+     "player": "Paul Pierce",
+     "team": "Boston Celtics",
+     "rookie": false
+    },
+    {
+     "number": "RS-16",
+     "player": "Cooper Flagg",
+     "team": "Dallas Mavericks",
+     "rookie": true
+    },
+    {
+     "number": "RS-17",
+     "player": "Dylan Harper",
+     "team": "San Antonio Spurs",
+     "rookie": true
+    },
+    {
+     "number": "RS-18",
+     "player": "VJ Edgecombe",
+     "team": "Philadelphia 76ers",
+     "rookie": true
+    },
+    {
+     "number": "RS-19",
+     "player": "Kon Knueppel",
+     "team": "Charlotte Hornets",
+     "rookie": true
+    },
+    {
+     "number": "RS-20",
+     "player": "Ace Bailey",
+     "team": "Utah Jazz",
+     "rookie": true
+    }
+   ],
+   "note": null
+  },
+  {
+   "name": "Radiating Rookies",
+   "code": "RR",
+   "kind": "ssp",
+   "parallels": [
+    {
+     "name": "Base",
+     "print_run": null,
+     "odds": {
+      "Hobby": 2179,
+      "Jumbo": 434
+     }
+    },
+    {
+     "name": "SuperFractor",
+     "print_run": 1,
+     "odds": {}
+    }
+   ],
+   "cards": [
+    {
+     "number": "RR-1",
+     "player": "Cooper Flagg",
+     "team": "Dallas Mavericks",
+     "rookie": true
+    },
+    {
+     "number": "RR-2",
+     "player": "Dylan Harper",
+     "team": "San Antonio Spurs",
+     "rookie": true
+    },
+    {
+     "number": "RR-3",
+     "player": "VJ Edgecombe",
+     "team": "Philadelphia 76ers",
+     "rookie": true
+    },
+    {
+     "number": "RR-4",
+     "player": "Kon Knueppel",
+     "team": "Charlotte Hornets",
+     "rookie": true
+    },
+    {
+     "number": "RR-5",
+     "player": "Ace Bailey",
+     "team": "Utah Jazz",
+     "rookie": true
+    },
+    {
+     "number": "RR-6",
+     "player": "Jeremiah Fears",
+     "team": "New Orleans Pelicans",
+     "rookie": true
+    },
+    {
+     "number": "RR-7",
+     "player": "Collin Murray-Boyles",
+     "team": "Toronto Raptors",
+     "rookie": true
+    },
+    {
+     "number": "RR-8",
+     "player": "Khaman Maluach",
+     "team": "Phoenix Suns",
+     "rookie": true
+    },
+    {
+     "number": "RR-9",
+     "player": "Walter Clayton Jr.",
+     "team": "Utah Jazz",
+     "rookie": true
+    },
+    {
+     "number": "RR-10",
+     "player": "Asa Newell",
+     "team": "Atlanta Hawks",
+     "rookie": true
+    }
+   ],
+   "note": null
+  },
+  {
+   "name": "Ultra Violet All-Stars",
+   "code": "UV",
+   "kind": "ssp",
+   "parallels": [
+    {
+     "name": "Base",
+     "print_run": null,
+     "odds": {
+      "Hobby": 1452,
+      "Jumbo": 289,
+      "Value": 81494,
+      "Mega": 42917
+     }
+    },
+    {
+     "name": "SuperFractor",
+     "print_run": 1,
+     "odds": {}
+    }
+   ],
+   "cards": [
+    {
+     "number": "UV-1",
+     "player": "LeBron James",
+     "team": "Los Angeles Lakers",
+     "rookie": false
+    },
+    {
+     "number": "UV-2",
+     "player": "Giannis Antetokounmpo",
+     "team": "Milwaukee Bucks",
+     "rookie": false
+    },
+    {
+     "number": "UV-3",
+     "player": "Kevin Durant",
+     "team": "Houston Rockets",
+     "rookie": false
+    },
+    {
+     "number": "UV-4",
+     "player": "Jalen Brunson",
+     "team": "New York Knicks",
+     "rookie": false
+    },
+    {
+     "number": "UV-5",
+     "player": "Stephen Curry",
+     "team": "Golden State Warriors",
+     "rookie": false
+    },
+    {
+     "number": "UV-6",
+     "player": "Jayson Tatum",
+     "team": "Boston Celtics",
+     "rookie": false
+    },
+    {
+     "number": "UV-7",
+     "player": "Anthony Edwards",
+     "team": "Minnesota Timberwolves",
+     "rookie": false
+    },
+    {
+     "number": "UV-8",
+     "player": "Victor Wembanyama",
+     "team": "San Antonio Spurs",
+     "rookie": false
+    },
+    {
+     "number": "UV-9",
+     "player": "Shai Gilgeous-Alexander",
+     "team": "Oklahoma City Thunder",
+     "rookie": false
+    },
+    {
+     "number": "UV-10",
+     "player": "Nikola Jokić",
+     "team": "Denver Nuggets",
+     "rookie": false
+    },
+    {
+     "number": "UV-11",
+     "player": "Cooper Flagg",
+     "team": "Dallas Mavericks",
+     "rookie": true
+    },
+    {
+     "number": "UV-12",
+     "player": "Dylan Harper",
+     "team": "San Antonio Spurs",
+     "rookie": true
+    },
+    {
+     "number": "UV-13",
+     "player": "VJ Edgecombe",
+     "team": "Philadelphia 76ers",
+     "rookie": true
+    },
+    {
+     "number": "UV-14",
+     "player": "Kon Knueppel",
+     "team": "Charlotte Hornets",
+     "rookie": true
+    },
+    {
+     "number": "UV-15",
+     "player": "Ace Bailey",
+     "team": "Utah Jazz",
+     "rookie": true
+    }
+   ],
+   "note": null
+  },
+  {
+   "name": "Helix",
+   "code": "H",
+   "kind": "ssp",
+   "parallels": [
+    {
+     "name": "Base",
+     "print_run": null,
+     "odds": {
+      "Hobby": 3205,
+      "Jumbo": 956,
+      "Value": 31709,
+      "Mega": 15550
+     }
+    },
+    {
+     "name": "SuperFractor",
+     "print_run": 1,
+     "odds": {}
+    }
+   ],
+   "cards": [
+    {
+     "number": "H-1",
+     "player": "LeBron James",
+     "team": "Los Angeles Lakers",
+     "rookie": false
+    },
+    {
+     "number": "H-2",
+     "player": "Anthony Edwards",
+     "team": "Minnesota Timberwolves",
+     "rookie": false
+    },
+    {
+     "number": "H-3",
+     "player": "Stephen Curry",
+     "team": "Golden State Warriors",
+     "rookie": false
+    },
+    {
+     "number": "H-4",
+     "player": "Giannis Antetokounmpo",
+     "team": "Milwaukee Bucks",
+     "rookie": false
+    },
+    {
+     "number": "H-5",
+     "player": "Shai Gilgeous-Alexander",
+     "team": "Oklahoma City Thunder",
+     "rookie": false
+    },
+    {
+     "number": "H-6",
+     "player": "Kyrie Irving",
+     "team": "Dallas Mavericks",
+     "rookie": false
+    },
+    {
+     "number": "H-7",
+     "player": "Jayson Tatum",
+     "team": "Boston Celtics",
+     "rookie": false
+    },
+    {
+     "number": "H-8",
+     "player": "Magic Johnson",
+     "team": "Los Angeles Lakers",
+     "rookie": false
+    },
+    {
+     "number": "H-9",
+     "player": "Larry Bird",
+     "team": "Boston Celtics",
+     "rookie": false
+    },
+    {
+     "number": "H-10",
+     "player": "Shaquille O'Neal",
+     "team": "Los Angeles Lakers",
+     "rookie": false
+    },
+    {
+     "number": "H-11",
+     "player": "Cooper Flagg",
+     "team": "Dallas Mavericks",
+     "rookie": true
+    },
+    {
+     "number": "H-12",
+     "player": "Dylan Harper",
+     "team": "San Antonio Spurs",
+     "rookie": true
+    },
+    {
+     "number": "H-13",
+     "player": "VJ Edgecombe",
+     "team": "Philadelphia 76ers",
+     "rookie": true
+    },
+    {
+     "number": "H-14",
+     "player": "Kon Knueppel",
+     "team": "Charlotte Hornets",
+     "rookie": true
+    },
+    {
+     "number": "H-15",
+     "player": "Ace Bailey",
+     "team": "Utah Jazz",
+     "rookie": true
+    },
+    {
+     "number": "H-16",
+     "player": "Tre Johnson III",
+     "team": "Washington Wizards",
+     "rookie": true
+    },
+    {
+     "number": "H-17",
+     "player": "Khaman Maluach",
+     "team": "Phoenix Suns",
+     "rookie": true
+    },
+    {
+     "number": "H-18",
+     "player": "Jeremiah Fears",
+     "team": "New Orleans Pelicans",
+     "rookie": true
+    },
+    {
+     "number": "H-19",
+     "player": "Noa Essengue",
+     "team": "Chicago Bulls",
+     "rookie": true
+    },
+    {
+     "number": "H-20",
+     "player": "Walter Clayton Jr.",
+     "team": "Utah Jazz",
+     "rookie": true
+    }
+   ],
+   "note": null
+  },
+  {
+   "name": "Let's Go",
+   "code": "LG",
+   "kind": "ssp",
+   "parallels": [
+    {
+     "name": "Base",
+     "print_run": null,
+     "odds": {
+      "Hobby": 8392,
+      "Jumbo": 2505,
+      "Value": 83157,
+      "Mega": 40874
+     }
+    },
+    {
+     "name": "SuperFractor",
+     "print_run": 1,
+     "odds": {}
+    }
+   ],
+   "cards": [
+    {
+     "number": "LG-1",
+     "player": "Stephen Curry",
+     "team": "Golden State Warriors",
+     "rookie": false
+    },
+    {
+     "number": "LG-2",
+     "player": "Anthony Edwards",
+     "team": "Minnesota Timberwolves",
+     "rookie": false
+    },
+    {
+     "number": "LG-3",
+     "player": "LeBron James",
+     "team": "Los Angeles Lakers",
+     "rookie": false
+    },
+    {
+     "number": "LG-4",
+     "player": "Shai Gilgeous-Alexander",
+     "team": "Oklahoma City Thunder",
+     "rookie": false
+    },
+    {
+     "number": "LG-5",
+     "player": "Kyrie Irving",
+     "team": "Dallas Mavericks",
+     "rookie": false
+    },
+    {
+     "number": "LG-6",
+     "player": "Jayson Tatum",
+     "team": "Boston Celtics",
+     "rookie": false
+    },
+    {
+     "number": "LG-7",
+     "player": "James Harden",
+     "team": "Los Angeles Clippers",
+     "rookie": false
+    },
+    {
+     "number": "LG-8",
+     "player": "Nikola Jokić",
+     "team": "Denver Nuggets",
+     "rookie": false
+    },
+    {
+     "number": "LG-9",
+     "player": "Paolo Banchero",
+     "team": "Orlando Magic",
+     "rookie": false
+    },
+    {
+     "number": "LG-10",
+     "player": "Cade Cunningham",
+     "team": "Detroit Pistons",
+     "rookie": false
+    },
+    {
+     "number": "LG-11",
+     "player": "Cooper Flagg",
+     "team": "Dallas Mavericks",
+     "rookie": true
+    },
+    {
+     "number": "LG-12",
+     "player": "Dylan Harper",
+     "team": "San Antonio Spurs",
+     "rookie": true
+    },
+    {
+     "number": "LG-13",
+     "player": "VJ Edgecombe",
+     "team": "Philadelphia 76ers",
+     "rookie": true
+    },
+    {
+     "number": "LG-14",
+     "player": "Kon Knueppel",
+     "team": "Charlotte Hornets",
+     "rookie": true
+    },
+    {
+     "number": "LG-15",
+     "player": "Ace Bailey",
+     "team": "Utah Jazz",
+     "rookie": true
+    }
+   ],
+   "note": null
+  },
+  {
+   "name": "The Finals",
+   "code": "FIN",
+   "kind": "ssp",
+   "parallels": [
+    {
+     "name": "Base",
+     "print_run": null,
+     "odds": {
+      "Hobby": 12899,
+      "Jumbo": 3849,
+      "Value": 127334,
+      "Mega": 63114
+     }
+    },
+    {
+     "name": "Gold",
+     "print_run": 50,
+     "odds": {}
+    },
+    {
+     "name": "SuperFractor",
+     "print_run": 1,
+     "odds": {}
+    }
+   ],
+   "cards": [
+    {
+     "number": "FIN-1",
+     "player": "LeBron James",
+     "team": "Los Angeles Lakers",
+     "rookie": false
+    },
+    {
+     "number": "FIN-2",
+     "player": "Stephen Curry",
+     "team": "Golden State Warriors",
+     "rookie": false
+    },
+    {
+     "number": "FIN-3",
+     "player": "Giannis Antetokounmpo",
+     "team": "Milwaukee Bucks",
+     "rookie": false
+    },
+    {
+     "number": "FIN-4",
+     "player": "Nikola Jokić",
+     "team": "Denver Nuggets",
+     "rookie": false
+    },
+    {
+     "number": "FIN-5",
+     "player": "Shai Gilgeous-Alexander",
+     "team": "Oklahoma City Thunder",
+     "rookie": false
+    },
+    {
+     "number": "FIN-6",
+     "player": "Bill Russell",
+     "team": "Boston Celtics",
+     "rookie": false
+    },
+    {
+     "number": "FIN-7",
+     "player": "Larry Bird",
+     "team": "Boston Celtics",
+     "rookie": false
+    },
+    {
+     "number": "FIN-8",
+     "player": "Magic Johnson",
+     "team": "Los Angeles Lakers",
+     "rookie": false
+    },
+    {
+     "number": "FIN-9",
+     "player": "Hakeem Olajuwon",
+     "team": "Houston Rockets",
+     "rookie": false
+    },
+    {
+     "number": "FIN-10",
+     "player": "Shaquille O'Neal",
+     "team": "Los Angeles Lakers",
+     "rookie": false
+    }
+   ],
+   "note": null
+  },
+  {
+   "name": "Hidden Gems",
+   "code": "HG",
+   "kind": "ssp",
+   "parallels": [
+    {
+     "name": "Base",
+     "print_run": null,
+     "odds": {
+      "Hobby": 26121,
+      "Jumbo": 7698,
+      "Value": 254668,
+      "Mega": 126227
+     }
+    },
+    {
+     "name": "SuperFractor",
+     "print_run": 1,
+     "odds": {}
+    }
+   ],
+   "cards": [],
+   "note": "Checklist not published yet — press Re-import to look again."
+  }
+ ]
+}
