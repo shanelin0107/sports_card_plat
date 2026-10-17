@@ -28,7 +28,7 @@ def display_url(url: str) -> str:
 
 def _download(url: str) -> bytes | None:
     try:
-        r = httpx.get(display_url(url), timeout=8, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0"})
+        r = httpx.get(display_url(url), timeout=5, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0"})
         if r.status_code == 200 and r.headers.get("content-type", "").startswith("image/"):
             return r.content
     except httpx.HTTPError:
@@ -46,7 +46,7 @@ def analyze(data: bytes) -> dict | None:
         im = Image.open(io.BytesIO(data)).convert("RGB")
     except Exception:
         return None
-    im.thumbnail((240, 240))
+    im.thumbnail((128, 128))  # small is plenty to find the card, and ~4x faster
     im = im.filter(ImageFilter.MedianFilter(3))
     w, h = im.size
     if w < 20 or h < 20:
@@ -91,17 +91,37 @@ def analyze(data: bytes) -> dict | None:
     return {"fill": round(fill, 3), "ratio": round(ratio, 3), "uniform_bg": uniform, "crop": crop, "score": round(score, 4)}
 
 
-def best_photo(candidates: list[dict], download=None, limit: int = 6) -> dict | None:
+_cache: dict[str, dict | None] = {}  # photo URL -> analysis (the same photos come back on re-picks)
+
+
+def analyze_urls(urls: list[str], download=None) -> dict[str, dict | None]:
+    """Download and score many photos at once (16 at a time); results are remembered."""
+    download = download or _download
+    todo = [u for u in dict.fromkeys(urls) if u not in _cache]
+
+    def work(u: str):
+        data = download(u)
+        return u, analyze(data) if data else None
+
+    if todo:
+        with ThreadPoolExecutor(max_workers=16) as pool:
+            for u, a in pool.map(work, todo):
+                _cache[u] = a
+        if len(_cache) > 5000:
+            _cache.clear()
+    return {u: _cache.get(u) for u in urls}
+
+
+def best_photo(candidates: list[dict], download=None, limit: int = 3, analyses: dict | None = None) -> dict | None:
     """candidates: [{'image', 'title'}] in preference order -> {'url', 'crop', 'score'}."""
     cands = [c for c in candidates if c.get("image")][:limit]
     if not cands:
         return None
-    download = download or _download
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        datas = list(pool.map(lambda c: download(c["image"]), cands))
+    if analyses is None:
+        analyses = analyze_urls([c["image"] for c in cands], download)
     best = None
-    for i, (c, data) in enumerate(zip(cands, datas)):
-        a = analyze(data) if data else None
+    for i, c in enumerate(cands):
+        a = analyses.get(c["image"])
         score = a["score"] if a else 0.3  # couldn't look at it: keep the listing order
         if _GRADED.search(c.get("title") or ""):
             score *= 0.75  # slabs: label and plastic around the card

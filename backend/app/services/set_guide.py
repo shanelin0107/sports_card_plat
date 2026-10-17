@@ -7,7 +7,6 @@ import json
 import logging
 import re
 import unicodedata
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -429,9 +428,10 @@ def load_photos(db: Session, insert_id: int, force: bool = False) -> dict:
         par = [it for it in with_photo if it not in base and any(title_matches(it["title"], parallel=p, **kw) for p in others if p.lower() != "base")]
         return base + par
 
-    work = [(c, candidates(c["player"], c["team"])) for c in todo]
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        picks = list(pool.map(lambda cw: card_photo.best_photo(cw[1]) if cw[1] else None, work))
+    work = [(c, candidates(c["player"], c["team"])[:3]) for c in todo]
+    # All photos for the whole insert are fetched and scored together, in parallel.
+    analyses = card_photo.analyze_urls([it["image"] for _, cs in work for it in cs])
+    picks = [card_photo.best_photo(cs, analyses=analyses) if cs else None for _, cs in work]
     added = 0
     for (c, _), pick in zip(work, picks):
         if pick:
