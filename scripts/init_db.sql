@@ -367,3 +367,5 @@ CREATE TABLE IF NOT EXISTS set_price_cache (
   fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (card_id, parallel_id)
 );
+-- v0.7.1: when photos were last looked up for a whole insert (one search fills every card).
+ALTER TABLE set_insert ADD COLUMN IF NOT EXISTS photos_checked_at TIMESTAMPTZ;

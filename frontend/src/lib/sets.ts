@@ -13,7 +13,16 @@ export type SetCard = {
   owned: number;
   prices: Record<string, CardPrice>; // by parallel id
 };
-export type SetInsert = { id: number; name: string; code: string | null; kind: string; note: string | null; parallels: SetParallel[]; cards: SetCard[] };
+export type SetInsert = {
+  id: number;
+  name: string;
+  code: string | null;
+  kind: string;
+  note: string | null;
+  photos_checked_at: string | null;
+  parallels: SetParallel[];
+  cards: SetCard[];
+};
 export type SetProduct = {
   id: number;
   name: string;

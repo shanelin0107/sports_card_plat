@@ -64,6 +64,21 @@ def price(card_id: int, parallel_id: int, force: bool = False, db: Session = Dep
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
+@router.post("/inserts/{insert_id}/photos")
+def photos(insert_id: int, force: bool = False, db: Session = Depends(get_db)):
+    """Card photos for a whole insert from one search (done once per insert)."""
+    try:
+        return set_guide.load_photos(db, insert_id, force)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except compsapi.QuotaReached as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except compsapi.CompsApiError as exc:
+        raise HTTPException(status_code=503 if exc.status == 503 else 502, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 class ImportIn(BaseModel):
     name: str = Field(min_length=6, max_length=150)
     checklist_url: str | None = Field(default=None, max_length=500)

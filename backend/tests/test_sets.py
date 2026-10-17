@@ -213,3 +213,32 @@ def test_import_new_product_keeps_inserts_with_odds(client, local_site):
     d = client.get(f"/api/v1/sets/{r['product_id']}").json()
     assert d["year"] == 2024 and d["sport"] == "Basketball" and d["set_name"] == "Topps Chrome"
     assert sorted(i["name"] for i in d["inserts"]) == ["Fanatical", "Ultra Violet All-Stars"]
+
+
+def test_photos_for_a_whole_insert_from_one_search(client, monkeypatch):
+    from app.core.config import settings
+    from app.services import compsapi
+
+    monkeypatch.setattr(settings, "compsapi_key", "sk_test")
+    monkeypatch.setattr(settings, "ebay_client_id", "")
+    fake = _fake_sold([
+        _row(1, "2025-26 Topps Chrome Victor Wembanyama Fanatical SSP FAN-1", 150.0, "2026-10-10", "https://i.ebayimg.com/wemby.jpg"),
+        _row(2, "2025-26 Topps Chrome Ja Morant Fanatical Gold /50", 300.0, "2026-10-09", "https://i.ebayimg.com/morant-gold.jpg"),
+        _row(3, "2025-26 Topps Chrome Cooper Flagg Fanatical RC", 280.0, "2026-10-08", None),
+        _row(4, "2025-26 Topps Chrome Cooper Flagg Paradox", 200.0, "2026-10-08", "https://i.ebayimg.com/flagg-paradox.jpg"),
+    ])
+    monkeypatch.setattr(compsapi, "fetch_sold", fake)
+    pid = client.get("/api/v1/sets").json()[0]["id"]
+    fan = next(i for i in client.get(f"/api/v1/sets/{pid}").json()["inserts"] if i["name"] == "Fanatical")
+
+    r = client.post(f"/api/v1/sets/inserts/{fan['id']}/photos").json()
+    assert fake.calls == ["2025 Topps Chrome Fanatical"] and r["source"] == "compsapi" and r["added"] == 2
+    cards = {c["number"]: c["image_url"] for c in next(i for i in client.get(f"/api/v1/sets/{pid}").json()["inserts"] if i["name"] == "Fanatical")["cards"]}
+    assert cards["FAN-1"] == "https://i.ebayimg.com/wemby.jpg"
+    assert cards["FAN-4"] == "https://i.ebayimg.com/morant-gold.jpg"  # parallel photo when no base one
+    assert cards["FAN-21"] is None  # a Paradox photo is not a Fanatical
+
+    again = client.post(f"/api/v1/sets/inserts/{fan['id']}/photos").json()
+    assert again["skipped"] and len(fake.calls) == 1  # once per insert
+    client.post(f"/api/v1/sets/inserts/{fan['id']}/photos", params={"force": True})
+    assert len(fake.calls) == 2

@@ -127,7 +127,7 @@ def product_detail(db: Session, pid: int) -> dict | None:
     if not p:
         return None
     boxes = [dict(r) for r in db.execute(text("SELECT id, name, packs_per_box, cards_per_pack, boxes_per_case FROM set_box_type WHERE product_id = :p ORDER BY sort, id"), {"p": pid}).mappings()]
-    inserts = [dict(r) for r in db.execute(text("SELECT id, name, code, kind, note FROM set_insert WHERE product_id = :p ORDER BY sort, id"), {"p": pid}).mappings()]
+    inserts = [dict(r) for r in db.execute(text("SELECT id, name, code, kind, note, photos_checked_at FROM set_insert WHERE product_id = :p ORDER BY sort, id"), {"p": pid}).mappings()]
     ids = [i["id"] for i in inserts] or [0]
     pars = db.execute(
         text("SELECT id, insert_id, name, print_run, odds FROM set_insert_parallel WHERE insert_id = ANY(:ids) ORDER BY sort, id"), {"ids": ids}
@@ -288,3 +288,59 @@ def price_check(db: Session, card_id: int, parallel_id: int, force: bool = False
         db.execute(text("UPDATE set_insert_card SET image_url = :u WHERE id = :c AND (image_url IS NULL OR :base)"), {"u": photo, "c": card_id, "base": row["parallel"].lower() == "base"})
     db.commit()
     return {**result, "cached": False, "fetched_at": datetime.now(timezone.utc).isoformat()}
+
+
+# --------------------------------------------------------------------------- photos
+
+
+def load_photos(db: Session, insert_id: int, force: bool = False) -> dict:
+    """One search for the whole insert ('2025 Topps Chrome Fanatical') and a photo for every
+    card whose player shows up in the results. Uses eBay live listings when an eBay key is
+    set (free), otherwise one CompsAPI sold search. Done once per insert unless `force`."""
+    from app.services import ebay
+
+    ins = db.execute(
+        text(
+            "SELECT i.id, i.name, i.photos_checked_at, p.year, p.set_name FROM set_insert i "
+            "JOIN set_product p ON p.id = i.product_id WHERE i.id = :i"
+        ),
+        {"i": insert_id},
+    ).mappings().first()
+    if not ins:
+        raise LookupError("insert not found")
+    cards = list(db.execute(text("SELECT id, player, image_url FROM set_insert_card WHERE insert_id = :i"), {"i": insert_id}).mappings())
+    missing = [c for c in cards if not c["image_url"]]
+    if not missing or (ins["photos_checked_at"] and not force):
+        return {"source": None, "searched": 0, "added": 0, "missing": len(missing), "skipped": True}
+
+    q = f"{ins['year']} {ins['set_name']} {insert_keyword(ins['name'])}"
+    source, items = None, []
+    if ebay.ebay_enabled():
+        try:
+            items = [{"title": a["title"], "image": a.get("image")} for a in ebay.search_listings(q, None, limit=200).get("active", [])]
+            source = "ebay"
+        except Exception:  # eBay key not working: fall back to CompsAPI
+            logger.warning("eBay photo search failed for %s", q, exc_info=True)
+    if not any(it.get("image") for it in items):
+        if not compsapi.enabled():
+            if source is None:
+                raise compsapi.CompsApiError("compsapi_off: photos need COMPSAPI_KEY (or an eBay key) in .env", 503)
+        else:
+            items = [{"title": r["title"], "image": r.get("image")} for r in compsapi.fetch_sold(q, {}, None, size=240)["items"]]
+            source = "compsapi"
+
+    others = [r[0] for r in db.execute(text("SELECT name FROM set_insert_parallel WHERE insert_id = :i"), {"i": insert_id})]
+    added = 0
+    for c in missing:
+        kw = dict(insert=ins["name"], player=c["player"], print_run=None, other_parallels=others)
+        with_photo = [it for it in items if it.get("image")]
+        # Prefer a photo of the base insert; a numbered parallel shows the same design in another colour.
+        hit = next((it for it in with_photo if title_matches(it["title"], parallel="Base", **kw)), None) or next(
+            (it for it in with_photo if any(title_matches(it["title"], parallel=p, **kw) for p in others if p.lower() != "base")), None
+        )
+        if hit:
+            db.execute(text("UPDATE set_insert_card SET image_url = :u WHERE id = :c AND image_url IS NULL"), {"u": hit["image"], "c": c["id"]})
+            added += 1
+    db.execute(text("UPDATE set_insert SET photos_checked_at = NOW() WHERE id = :i"), {"i": insert_id})
+    db.commit()
+    return {"source": source, "searched": len(items), "added": added, "missing": len(missing) - added, "skipped": False}

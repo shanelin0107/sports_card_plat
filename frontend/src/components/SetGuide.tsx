@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { api } from '@/lib/client-api';
 import { money } from '@/lib/format';
@@ -22,6 +22,7 @@ import { SetImportForm } from './SetImportForm';
 import { SetPricePanel } from './SetPricePanel';
 
 type Sort = 'checklist' | 'price' | 'player';
+type PhotoResult = { source: 'ebay' | 'compsapi' | null; searched: number; added: number; missing: number; skipped: boolean };
 
 function median(xs: number[]) {
   if (!xs.length) return null;
@@ -184,7 +185,16 @@ export function SetGuide({ initial, initialBox, initialInsert }: { initial: SetP
         </section>
       )}
 
-      {selected && box && <InsertDetail key={selected.id} product={product} ins={selected} box={box} onPriced={onPriced} />}
+      {selected && box && (
+        <InsertDetail
+          key={selected.id}
+          product={product}
+          ins={selected}
+          box={box}
+          onPriced={onPriced}
+          onReload={async () => setProduct(await api<SetProduct>(`/sets/${product.id}`))}
+        />
+      )}
     </div>
   );
 }
@@ -261,12 +271,41 @@ function InsertDetail({
   ins,
   box,
   onPriced,
+  onReload,
 }: {
   product: SetProduct;
   ins: SetInsert;
   box: BoxType;
   onPriced: (cardId: number, parId: number, r: PriceResult) => void;
+  onReload: () => Promise<void>;
 }) {
+  const missing = ins.cards.filter((c) => !c.image_url).length;
+  const [photoMsg, setPhotoMsg] = useState<string | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+
+  function findPhotos(force: boolean) {
+    setPhotoBusy(true);
+    setPhotoMsg('Finding card photos…');
+    api<PhotoResult>(`/sets/inserts/${ins.id}/photos${force ? '?force=true' : ''}`, { method: 'POST' })
+      .then(async (r) => {
+        await onReload();
+        if (r.skipped) return setPhotoMsg(null);
+        const from = r.source === 'ebay' ? 'eBay listings (free)' : '1 CompsAPI search';
+        setPhotoMsg(
+          `Found ${r.added} photo${r.added === 1 ? '' : 's'} from ${from}.` +
+            (r.missing ? ` ${r.missing} card${r.missing === 1 ? '' : 's'} had no listing — they get a photo when you check their price.` : ''),
+        );
+      })
+      .catch((e: Error) => setPhotoMsg(e.message.includes('compsapi_off') ? 'Photos need a CompsAPI key in .env.' : `Photo search failed: ${e.message}`))
+      .finally(() => setPhotoBusy(false));
+  }
+
+  // First time an insert is opened: one search fills in photos for every card it can.
+  useEffect(() => {
+    if (missing && !ins.photos_checked_at) findPhotos(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per insert
+  }, [ins.id]);
+
   const [parId, setParId] = useState(baseParallel(ins)?.id ?? 0);
   const par = ins.parallels.find((p) => p.id === parId) ?? ins.parallels[0];
   const [sort, setSort] = useState<Sort>('checklist');
@@ -370,6 +409,16 @@ function InsertDetail({
           </button>
           <span className="text-[12px] text-muted">Click a card to look up its sold prices.</span>
         </div>
+        {(photoMsg || (missing > 0 && ins.photos_checked_at)) && (
+          <p className="flex flex-wrap items-center gap-2 text-[12px] text-muted">
+            {photoMsg ?? `${missing} card${missing === 1 ? '' : 's'} without a photo.`}
+            {missing > 0 && ins.photos_checked_at && !photoBusy && (
+              <button type="button" className="text-link hover:text-ink" onClick={() => findPhotos(true)}>
+                Search again for photos (1 search)
+              </button>
+            )}
+          </p>
+        )}
 
         {n === 0 ? (
           <p className="text-[13px] text-muted">{ins.note ?? 'No checklist yet.'}</p>
@@ -386,16 +435,7 @@ function InsertDetail({
                     aria-label={`${c.number} ${c.player}: look up sold prices`}
                   >
                     <div className="relative w-full bg-base">
-                      {c.image_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element -- remote eBay images
-                        <img src={c.image_url} alt="" loading="lazy" className="aspect-[5/7] w-full object-contain" />
-                      ) : (
-                        <div className="flex aspect-[5/7] flex-col items-center justify-center gap-1 p-2 text-center">
-                          <span className="font-mono text-[12px] text-muted">{c.number}</span>
-                          <span className="text-[13px] font-bold text-ink">{c.player}</span>
-                          <span className="text-[11px] text-muted">no photo yet</span>
-                        </div>
-                      )}
+                      <TileImage card={c} />
                       <div className="absolute left-1.5 top-1.5 flex gap-1">
                         {c.rookie && <span className="badge bg-warn/20 text-warn">RC</span>}
                         {c.owned > 0 && <span className="badge bg-up/20 text-up">✓ Have{c.owned > 1 ? ` ×${c.owned}` : ''}</span>}
@@ -439,5 +479,23 @@ function InsertDetail({
         />
       )}
     </section>
+  );
+}
+
+/** Card photo, or the number and name when there's none (or it fails to load). */
+function TileImage({ card }: { card: SetCard }) {
+  const [failed, setFailed] = useState<string | null>(null);
+  if (card.image_url && failed !== card.image_url) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- remote eBay images
+      <img src={card.image_url} alt="" loading="lazy" onError={() => setFailed(card.image_url)} className="aspect-[5/7] w-full object-contain" />
+    );
+  }
+  return (
+    <div className="flex aspect-[5/7] flex-col items-center justify-center gap-1 p-2 text-center">
+      <span className="font-mono text-[12px] text-muted">{card.number}</span>
+      <span className="text-[13px] font-bold text-ink">{card.player}</span>
+      <span className="text-[11px] text-muted">{card.image_url ? 'photo unavailable' : 'no photo yet'}</span>
+    </div>
   );
 }
