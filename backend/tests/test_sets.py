@@ -380,3 +380,24 @@ def test_result_from_an_older_rule_is_flagged_not_searched_again(client, monkeyp
     assert r["cached"] and r["outdated"] and len(fake.calls) == 1
     r = client.post(f"/api/v1/sets/cards/{card['id']}/price", params={"parallel_id": base, "force": True}).json()
     assert not r["cached"] and len(fake.calls) == 2
+
+
+def test_checklist_group_names_dont_swallow_autograph_sets():
+    names = ["Paradox", "The Finals", "Ultra Violet All-Stars", "Radiating Rookies"]
+    assert set_import._match_group("Finals", names) == "The Finals"
+    assert set_import._match_group("Ultra Violet", names) == "Ultra Violet All-Stars"
+    assert set_import._match_group("Radiating Rookies", names) == "Radiating Rookies"
+    assert set_import._match_group("Paradox Autographs", names) is None
+
+
+def test_have_badge_needs_the_same_player(client):
+    base = {"sport": "Basketball", "year": 2025, "brand": "Topps", "set_name": "Topps Chrome", "parallel": "Fanatical", "print_run": None,
+            "rookie": False, "autograph": False}
+    add = lambda player, num: client.post("/api/v1/collection/items/quick-add", json={
+        "card": {**base, "player": player, "card_number": num}, "purchase_price": 10, "purchase_date": "2026-10-10", "grader": None, "grade_value": None})
+    add("Cooper Flagg", "FAN-21")
+    add("Bijan Robinson", "FAN-19")  # a football Fanatical with the same number as David Robinson's
+    pid = client.get("/api/v1/sets").json()[0]["id"]
+    fan = next(i for i in client.get(f"/api/v1/sets/{pid}").json()["inserts"] if i["name"] == "Fanatical")
+    owned = {c["number"]: c["owned"] for c in fan["cards"]}
+    assert owned["FAN-21"] == 1 and owned["FAN-19"] == 0

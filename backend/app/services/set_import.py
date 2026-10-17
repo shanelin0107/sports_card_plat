@@ -239,10 +239,13 @@ def _match_group(group_name: str, names: list[str]) -> str | None:
         k = _key(n)
         if g == k:
             return n
+    # Loose match ("Finals" for "The Finals", "Ultra Violet" for "Ultra Violet All-Stars"),
+    # but never a different kind of card that shares the name ("Paradox Autographs").
+    kinds = re.compile(r"auto|signature|relic|patch|memorabilia|jersey|variation|rookie")
     for n in names:
         k = _key(n)
         k2 = _key(re.sub(r"(?i)^the\s+|all[\s-]*stars?", "", n))
-        if len(k2) >= 4 and (k2 in g or g in k):
+        if len(k2) >= 4 and (k2 in g or g in k) and not (kinds.search(g) and not kinds.search(k)):
             return n
     return None
 

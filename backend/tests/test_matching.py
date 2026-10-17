@@ -107,3 +107,13 @@ def test_sale_audit_lists_auto_saved_sales_that_no_longer_match(client):
     assert mine[0]["why"] == ["parallel"]
     # nothing was removed by looking
     assert client.get(f"/api/v1/cards/{h['card_id']}/market-summary").status_code == 200
+
+
+def test_dockerfile_playwright_matches_requirements():
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    docker = re.search(r"PLAYWRIGHT_VERSION=([\d.]+)", (root / "Dockerfile").read_text()).group(1)
+    req = re.search(r"^playwright==([\d.]+)", (root / "requirements.txt").read_text(), re.M).group(1)
+    assert docker == req

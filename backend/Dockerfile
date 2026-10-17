@@ -7,7 +7,9 @@ WORKDIR /srv/backend
 
 # Headless Chromium for the set-guide importer (reads checklist / odds pages). Its own layer,
 # before requirements.txt, so adding a Python package doesn't download the browser again.
-RUN pip install --no-cache-dir playwright==1.56.0 && python -m playwright install --with-deps chromium
+# Keep this version the same as playwright== in requirements.txt (a test checks it).
+ARG PLAYWRIGHT_VERSION=1.56.0
+RUN pip install --no-cache-dir "playwright==${PLAYWRIGHT_VERSION}" && python -m playwright install --with-deps chromium
 
 COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt

@@ -172,16 +172,32 @@ def product_detail(db: Session, pid: int) -> dict | None:
 
 
 def _owned(db: Session, year: int, insert_ids: list[int]) -> dict[str, int]:
-    """How many of each checklist number are in the collection (same year, same card #)."""
+    """How many of each checklist card are in the collection: same year, same card # and
+    the same player (so another product's FAN-1 doesn't count)."""
     rows = db.execute(
         text(
-            "SELECT UPPER(c.card_number) AS num, SUM(ci.quantity) AS n FROM collection_item ci JOIN card c ON c.id = ci.card_id "
+            "SELECT UPPER(c.card_number) AS num, pl.full_name AS player, SUM(ci.quantity) AS n "
+            "FROM collection_item ci JOIN card c ON c.id = ci.card_id JOIN player pl ON pl.id = c.player_id "
             "WHERE c.year = :y AND UPPER(c.card_number) IN (SELECT UPPER(number) FROM set_insert_card WHERE insert_id = ANY(:ids)) "
-            "GROUP BY UPPER(c.card_number)"
+            "GROUP BY UPPER(c.card_number), pl.full_name"
         ),
         {"y": year, "ids": insert_ids},
     ).mappings()
-    return {r["num"]: int(r["n"]) for r in rows}
+    checklist = {
+        (r[0].upper(), _surname(r[1]))
+        for r in db.execute(text("SELECT number, player FROM set_insert_card WHERE insert_id = ANY(:ids)"), {"ids": insert_ids})
+    }
+    out: dict[str, int] = {}
+    for r in rows:
+        if (r["num"], _surname(r["player"])) in checklist:
+            out[r["num"]] = out.get(r["num"], 0) + int(r["n"])
+    return out
+
+
+def _surname(name: str) -> str:
+    """'David Robinson' -> 'robinson d' (surname + first initial: Bijan Robinson is someone else)."""
+    parts = [w for w in _words(name) if w not in {"jr", "sr", "ii", "iii", "iv"}]
+    return f"{parts[-1]} {parts[0][0]}" if parts else ""
 
 
 # --------------------------------------------------------------------------- price check

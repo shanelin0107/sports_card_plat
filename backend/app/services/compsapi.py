@@ -228,6 +228,8 @@ def simplify_query(q: str) -> tuple[str, list[str], int | None]:
     -> ("2025 topps chrome oliver bearman orange", ["raywave"], 25)"""
     from app.services.ebay import _SERIAL, _norm, strip_seasons
 
+    # Card codes (FAN-21, CAC-BEA) are often left out of titles: don't make them keywords.
+    q = re.sub(r"(?<![\w-])#?[A-Za-z]{1,5}-(?:\d{1,4}[A-Za-z]?|[A-Za-z]{2,4})(?![\w-])", " ", q)
     t = strip_seasons(_norm(q))
     serial = _SERIAL.search(t)
     run = int(serial.group(1)) if serial else None

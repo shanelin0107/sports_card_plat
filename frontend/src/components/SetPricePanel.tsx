@@ -78,18 +78,27 @@ export function SetPricePanel({
     }
   }
 
+  const latest = useRef(0); // only the newest lookup may update the panel (parallel switched mid-request)
+
   function load(force: boolean) {
+    const id = ++latest.current;
+    const parId = parallel.id;
     setBusy(true);
     setErr(null);
     if (force) setRes(null);
-    api<PriceResult>(`/sets/cards/${card.id}/price?parallel_id=${parallel.id}${force ? '&force=true' : ''}`, { method: 'POST' })
+    api<PriceResult>(`/sets/cards/${card.id}/price?parallel_id=${parId}${force ? '&force=true' : ''}`, { method: 'POST' })
       .then((r) => {
+        onResult(r, parId); // the grid keeps it under its own parallel either way
+        if (id !== latest.current) return;
         setRes(r);
-        onResult(r, parallel.id);
         if (!r.cached) api<CompsApiStatus>('/market/compsapi/status').then(setQuota).catch(() => {});
       })
-      .catch((e: Error) => setErr(e.message))
-      .finally(() => setBusy(false));
+      .catch((e: Error) => {
+        if (id === latest.current) setErr(e.message);
+      })
+      .finally(() => {
+        if (id === latest.current) setBusy(false);
+      });
   }
 
   useEffect(() => {
