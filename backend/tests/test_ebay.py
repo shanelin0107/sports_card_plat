@@ -77,7 +77,7 @@ def test_listings_with_insights_and_save(client, monkeypatch):
                                                       "player": "Damian Lillard", "card_number": "91", "parallel": "Orange Wave"}).json()
     out = client.get("/api/v1/market/ebay/listings", params={"card_id": card["card_id"], "grade": "raw"}).json()
     assert out["insights_available"] and out["sold"][0]["date"] == "2026-09-30" and out["sold"][0]["exact_match"]
-    assert "Prizm Black" in out["query"] and "Orange Wave" in out["query"]
+    assert "Prizm Black" in out["query"] and "Orange" in out["query"]  # colour only; "Wave" is checked by the matcher
     s = out["sold"][0]
     r = client.post("/api/v1/market/ebay/save-sold", json={"card_id": card["card_id"], "item_id": s["item_id"], "title": s["title"],
                                                          "url": s["url"], "price": s["price"], "date": s["date"], "grade": s["grade"]})

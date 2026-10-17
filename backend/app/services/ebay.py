@@ -124,7 +124,16 @@ def _get(path: str, params: dict, scope: str = SCOPE_BROWSE) -> dict | None:
 
 def _norm(s: str) -> str:
     t = re.sub(r"[^a-z0-9/#]+", " ", s.lower())
-    return re.sub(r"\bformula (1|one)\b", "f1", t)  # "Formula 1" / "Formula One" / "F1" are one word
+    t = re.sub(r"\bformula (1|one)\b", "f1", t)  # "Formula 1" / "Formula One" / "F1" are one word
+    # Parallel names sellers split or join either way: "Ray Wave" = "RayWave", "X Fractor" = "Xfractor".
+    return re.sub(r"\b(ray|x|sepia|tie) (wave|fractor|dye)\b", r"\1\2", t)
+
+
+# Generic parallel words sellers often leave out ("Orange Raywave Auto" for an Orange RayWave
+# Refractor): only the distinctive words of a parallel name have to appear in a title.
+_GENERIC_PARALLEL = {"refractor", "refractors", "prizm", "prizms", "parallel", "chrome"}
+_SERIAL = re.compile(r"(?<![\d.])(?:\d{1,4})?\s*/\s*(\d{1,4})\b")  # "/25", "12/25", "#/25"
+_ANY_NUMBER = re.compile(r"#\s*[a-z0-9]")
 
 
 # Words that mean a listing is a parallel/variation, not the base card.
@@ -157,6 +166,28 @@ def _number_in(num: str, t: str) -> bool:
     return bool(re.search(rf"(?<![a-z0-9]){core}(?![a-z0-9])", t))
 
 
+_COLOURS = {
+    "silver", "gold", "red", "blue", "green", "orange", "purple", "pink", "black", "white", "bronze", "teal",
+    "yellow", "aqua", "neon", "sapphire", "emerald", "ruby",
+}
+
+
+def search_query(year, card_set: str, player: str, card_number: str | None, parallel: str | None) -> str:
+    """Keywords for a sold-listings search. eBay-style search needs EVERY word in the title,
+    and sellers skip or vary a lot (insert codes, "Refractor", "F1" vs "Formula 1",
+    "RayWave" vs "Ray Wave"), so only send words a matching title almost always has —
+    year, set, player, the parallel's colour — and let match_listing() check the rest."""
+    set_words = [w for w in card_set.split() if w.lower() not in {"f1", "formula", "1", "one"}]
+    parts = [str(year), *set_words, player]
+    par = [w for w in (parallel or "").split() if w.lower() not in _GENERIC_PARALLEL | {"base"}]
+    colours = [w for w in par if w.lower() in _COLOURS]
+    if par:
+        parts.extend(colours or par[:1])
+    elif card_number and card_number.isdigit():
+        parts.append(card_number)  # base card: the number keeps parallels/inserts out
+    return " ".join(parts)
+
+
 def match_listing(title: str, target: dict | None, strict_base: bool = False) -> tuple[bool, list[str]]:
     """Heuristic: does this listing title describe the target card? Returns (exact, mismatches).
 
@@ -176,11 +207,24 @@ def match_listing(title: str, target: dict | None, strict_base: bool = False) ->
     if year and year not in t:
         misses.append("year")
     num = (target.get("card_number") or "").lower().lstrip("#")
+    parallel = _norm(target.get("parallel") or "").strip()
+    print_run = target.get("print_run")
     if num and not _number_in(num, t):
-        misses.append("card #")
-    parallel = (target.get("parallel") or "").lower()
-    if parallel and parallel != "base" and not all(w in t for w in parallel.split()):
-        misses.append("parallel")
+        # A title that names a different number is a different card. A title with no number
+        # at all is common (sellers skip insert codes like CAC-BEA): accept it when the card
+        # is otherwise specific (a named parallel or a print run) or the number is a code.
+        specific = (parallel and parallel != "base") or print_run or not num.isdigit()
+        if _ANY_NUMBER.search(t) or not specific:
+            misses.append("card #")
+    if print_run:
+        serials = {int(m) for m in _SERIAL.findall(t)}
+        if serials and int(print_run) not in serials:
+            misses.append("print run")  # /50 is not /25
+    if parallel and parallel != "base":
+        words = parallel.split()
+        need = [w for w in words if w not in _GENERIC_PARALLEL] or words
+        if not all(f" {w} " in t for w in need):
+            misses.append("parallel")
     elif strict_base and (not parallel or parallel == "base"):
         # Ignore words that belong to the player, the set ("Prizm Black") or a team ("Red Sox").
         rest = _TEAMS.sub(" ", t)

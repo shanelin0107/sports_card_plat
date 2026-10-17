@@ -9,6 +9,7 @@ quota (free plan: 100/month, 10/min, 1 year of history). /v1/usage is free.
 
 from __future__ import annotations
 
+import re
 import time
 
 import httpx
@@ -200,6 +201,56 @@ def _stats(prices: list[float]) -> dict | None:
     return {"count": n, "low": s[0], "median": round(med, 2), "high": s[-1]}
 
 
+_DROP = {
+    "rc", "rookie", "rookies", "auto", "autos", "autograph", "autographs", "autographed", "signed",
+    "refractor", "refractors", "f1", "card", "cards", "ssp", "sp", "numbered", "raw", "ungraded",
+    "psa", "bgs", "sgc", "cgc", "gem", "mint", "mt", "nm",
+}
+# Team nicknames: many titles leave them out, and they never identify the card.
+_TEAM_WORDS = set(
+    (
+        "cardinals falcons ravens bills panthers bears bengals browns cowboys broncos lions packers texans colts jaguars "
+        "chiefs raiders chargers rams dolphins vikings patriots saints giants jets eagles steelers 49ers niners seahawks "
+        "buccaneers bucs titans commanders hawks celtics nets hornets bulls cavaliers cavs mavericks mavs nuggets pistons "
+        "warriors rockets pacers clippers lakers grizzlies heat bucks timberwolves wolves pelicans knicks thunder magic "
+        "76ers sixers suns blazers kings spurs raptors jazz wizards diamondbacks dbacks braves orioles cubs reds guardians "
+        "rockies tigers astros royals angels dodgers marlins brewers twins mets yankees athletics phillies pirates padres "
+        "mariners rays rangers jays nationals ducks bruins sabres flames hurricanes blackhawks avalanche oilers predators "
+        "devils islanders senators flyers penguins sharks kraken blues lightning leafs canucks capitals "
+        "ferrari mercedes mclaren williams alpine haas sauber"
+    ).split()
+)
+# Pattern words sellers spell several ways ("RayWave" / "Ray Wave"): checked on the result
+# titles after normalising, instead of being sent as search keywords.
+_PATTERNS = {
+    "raywave", "lazer", "laser", "mojo", "wave", "shimmer", "hyper", "disco", "ice", "camo", "scope", "cracked",
+    "pulsar", "velocity", "snakeskin", "speckle", "sparkle", "geometric", "checkerboard", "xfractor", "tiedye",
+    "sepiafractor", "kaleidoscope", "lava", "atomic", "nebula", "galactic", "zebra", "tiger", "peacock",
+}
+
+
+def simplify_query(q: str) -> tuple[str, list[str], int | None]:
+    """Typed text -> (keywords to search, words every result title must contain, print run).
+
+    "2025 Topps Chrome F1 Oliver Bearman Auto Orange RayWave Refractor RC #/25"
+    -> ("2025 topps chrome oliver bearman orange", ["raywave"], 25)"""
+    from app.services.ebay import _SERIAL, _norm
+
+    t = _norm(q)
+    serial = _SERIAL.search(t)
+    run = int(serial.group(1)) if serial else None
+    t = _SERIAL.sub(" ", t)
+    t = re.sub(r"\b(psa|bgs|sgc|cgc)\s*(10|[1-9](\.5)?)\b", " ", t)
+    keep, must = [], []
+    for w in t.split():
+        if w.startswith("#") or w in _DROP or w in _TEAM_WORDS:
+            continue  # card numbers / codes, team names and words sellers often leave out
+        bucket = must if w in _PATTERNS else keep
+        if w not in bucket:
+            bucket.append(w)
+    return " ".join(keep) or q.strip(), must, run
+
+
 def search_sold(query: str, days: int | None = None) -> dict:
     """Sold eBay listings for whatever the owner typed (search page). One CompsAPI request,
     cached for 6 hours; grades are read from titles so the page can filter without
@@ -212,14 +263,30 @@ def search_sold(query: str, days: int | None = None) -> dict:
     if hit and time.time() - hit[0] < SEARCH_CACHE_SECONDS:
         return {**hit[1], "cached": True}
 
-    data = fetch_sold(q, {}, None, days=days, size=200)
-    items = [r for r in data["items"] if r["date"] and not _JUNK.search(f" {_norm(r['title'])} ")]
+    keywords, must, run = simplify_query(q)
+    data = fetch_sold(keywords, {}, None, days=days, size=200)
+
+    def relevant(r: dict) -> bool:
+        t = f" {_norm(r['title'])} "
+        if _JUNK.search(t) or not all(f" {w} " in t for w in must):
+            return False
+        if run:
+            from app.services.ebay import _SERIAL
+
+            serials = {int(x) for x in _SERIAL.findall(t)}
+            if serials and run not in serials:
+                return False  # a /50 is not the /25 that was asked for
+        return True
+
+    items = [r for r in data["items"] if r["date"] and relevant(r)]
     for r in items:
         for k in ("exact_match", "mismatches"):
             r.pop(k, None)
     items.sort(key=lambda r: r.get("sold_at") or r["date"], reverse=True)
     out = {
         "query": q,
+        "searched_for": keywords,
+        "must_include": must + ([f"/{run}"] if run else []),
         "days": data.get("days"),
         "count": len(items),
         "items": items,

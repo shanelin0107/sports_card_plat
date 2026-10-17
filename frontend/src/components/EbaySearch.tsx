@@ -28,7 +28,17 @@ export type SearchListing = {
 };
 
 type Stats = { count: number; low: number; median: number; high: number } | null;
-type SoldResult = { query: string; days: number | null; count: number; items: SoldRow[]; stats: Stats; last_sale: SoldRow | null; cached: boolean };
+type SoldResult = {
+  query: string;
+  searched_for?: string;
+  must_include?: string[];
+  days: number | null;
+  count: number;
+  items: SoldRow[];
+  stats: Stats;
+  last_sale: SoldRow | null;
+  cached: boolean;
+};
 type SoldRow = { item_id: string; title: string; price: number; shipping: number; total: number; date: string; url: string; image: string | null; best_offer: boolean; grade: string };
 type LiveResult = { query: string; active: SearchListing[]; total_found: number | null };
 
@@ -71,7 +81,11 @@ const soldToListing = (r: SoldRow): SearchListing => ({
 export function EbaySearch({ q, owned }: { q: string; owned: CardSearchResult[] }) {
   const [items, setItems] = useState<SearchListing[] | null>(null);
   const [mode, setMode] = useState<'sold' | 'live'>('sold');
-  const [meta, setMeta] = useState<{ days: number | null; cached: boolean; total_found: number | null }>({ days: null, cached: false, total_found: null });
+  const [meta, setMeta] = useState<{ days: number | null; cached: boolean; total_found: number | null; searched?: string; must?: string[] }>({
+    days: null,
+    cached: false,
+    total_found: null,
+  });
   const [err, setErr] = useState<string | null>(null);
   const [off, setOff] = useState(false);
   const [filter, setFilter] = useState<string>('all');
@@ -88,7 +102,7 @@ export function EbaySearch({ q, owned }: { q: string; owned: CardSearchResult[] 
       .then((r) => {
         if (cancelled) return;
         setMode('sold');
-        setMeta({ days: r.days, cached: r.cached, total_found: null });
+        setMeta({ days: r.days, cached: r.cached, total_found: null, searched: r.searched_for, must: r.must_include });
         setItems(r.items.map(soldToListing));
       })
       .catch((e: Error) => {
@@ -201,6 +215,18 @@ export function EbaySearch({ q, owned }: { q: string; owned: CardSearchResult[] 
               ))}
             </div>
           </div>
+          {sold && meta.searched && (
+            <p className="font-mono text-[12px] text-muted">
+              Searched eBay sold for <span className="text-ink">“{meta.searched}”</span>
+              {meta.must?.length ? (
+                <>
+                  {' '}
+                  · titles must also have <span className="text-ink">{meta.must.join(', ')}</span>
+                </>
+              ) : null}{' '}
+              <span className="font-sans">(words sellers often leave out — RC, Auto, Refractor, card codes — aren’t required)</span>
+            </p>
+          )}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-[12px] text-muted">
               {sold

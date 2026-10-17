@@ -81,7 +81,7 @@ def test_sync_saves_only_exact_sales_and_fills_the_row(client, fake_api):
 
     sent = calls[-1].url.params
     assert sent["graded"] == "false" and sent["site"] == "US" and sent["best_offer"] == "1"
-    assert "329" in sent["q"] and "Lazer" in sent["q"] and "Raw" not in sent["q"]
+    assert "Lazer" in sent["q"] and "Raw" not in sent["q"] and "329" not in sent["q"]  # parallel card: number left to the matcher
 
     row = next(h for h in client.get("/api/v1/collection/items").json() if h["id"] == item_id)
     assert row["last_sale_price"] == 34.5 and row["last_sale_date"] == "2026-10-05"  # price + shipping
@@ -225,10 +225,11 @@ def test_sold_search_returns_sold_items_cached(client, fake_api):
     compsapi._search_cache.clear()
     r = client.get("/api/v1/market/sold-search", params={"q": "2024 prizm drake maye 329 lazer"}).json()
     titles = [i["title"] for i in r["items"]]
-    assert r["count"] == 4 and not any("lot" in t.lower() for t in titles)  # the lot is left out
+    assert r["count"] == 3 and not any("lot" in t.lower() for t in titles)  # the lot is left out
+    assert not any("Silver" in t for t in titles)  # "lazer" was asked for: the Silver Prizm sale isn't it
     assert r["items"][0]["date"] == "2026-10-05" and r["last_sale"]["total"] == 34.5  # newest first, price + shipping
     assert {i["grade"] for i in r["items"]} >= {"Raw", "PSA 10"}
-    assert r["stats"]["count"] == 4 and r["cached"] is False
+    assert r["stats"]["count"] == 3 and r["cached"] is False
     n = len(calls)
     again = client.get("/api/v1/market/sold-search", params={"q": "2024  Prizm Drake Maye 329 Lazer"}).json()
     assert again["cached"] is True and len(calls) == n  # same search: no request spent
@@ -237,3 +238,60 @@ def test_sold_search_returns_sold_items_cached(client, fake_api):
 def test_sold_search_without_key_says_so(client):
     r = client.get("/api/v1/market/sold-search", params={"q": "anything"})
     assert r.status_code == 503 and "compsapi_off" in r.json()["detail"]
+
+
+BEARMAN = {"player": "Oliver Bearman", "year": 2025, "product": "Topps Chrome F1", "card_number": "CAC-BEA",
+           "parallel": "Orange RayWave Refractor", "print_run": 25, "grade": "Raw"}
+
+
+def test_bearman_orange_raywave_titles_sellers_actually_write():
+    from app.services.ebay import match_listing
+
+    for title in (
+        "2025 Topps Chrome F1 Oliver Bearman Orange RayWave Refractor Auto /25 RC #CAC-BEA",
+        "2025 Topps Chrome Formula 1 Oliver Bearman Orange Raywave Auto 12/25 Rookie Haas",  # no "Refractor", no number
+        "Oliver Bearman 2025 Topps Chrome F1 Orange Ray Wave Refractor Autograph /25 RC",  # "Ray Wave"
+        "2025 Topps Chrome F1 OLIVER BEARMAN Chrome Autographs Orange RayWave /25 CAC-BEA",
+    ):
+        assert match_listing(title, BEARMAN, strict_base=True) == (True, []), title
+    # still rejected: another parallel, another print run, another card number, a slab
+    assert "parallel" in match_listing("2025 Topps Chrome F1 Oliver Bearman Orange Refractor Auto /25", BEARMAN, True)[1]
+    assert "print run" in match_listing("2025 Topps Chrome F1 Oliver Bearman Gold RayWave Orange Auto /50", BEARMAN, True)[1]
+    assert "card #" in match_listing("2025 Topps Chrome F1 Oliver Bearman #86 Orange RayWave /25", BEARMAN, True)[1]
+    assert "grade" in match_listing("2025 Topps Chrome F1 Oliver Bearman Orange RayWave Auto /25 PSA 10", BEARMAN, True)[1]
+
+
+def test_base_card_still_needs_its_number():
+    from app.services.ebay import match_listing
+
+    base = {"player": "Drake Maye", "year": 2024, "product": "Prizm", "card_number": "329", "parallel": None, "grade": "Raw"}
+    assert match_listing("2024 Panini Prizm Drake Maye Rookie RC", base, True)[1] == ["card #"]  # base card + no number
+
+
+def test_search_query_keeps_only_reliable_words():
+    from app.services.ebay import search_query
+
+    assert search_query(2025, "Topps Chrome F1", "Oliver Bearman", "CAC-BEA", "Orange RayWave Refractor") == "2025 Topps Chrome Oliver Bearman Orange"
+    assert search_query(2024, "Panini Prizm", "Drake Maye", "329", None) == "2024 Panini Prizm Drake Maye 329"
+
+
+def test_free_text_sold_search_is_simplified_and_filtered(client, fake_api, monkeypatch):
+    calls, _ = fake_api
+    compsapi._search_cache.clear()
+    real = compsapi._client
+    rows = {"ok": True, "items": [
+        {"item_id": "1", "title": "2025 Topps Chrome Formula 1 Oliver Bearman Orange Ray Wave Auto 3/25 Haas", "last_sold": "2026-10-16T12:00:00Z", "price": 610.0, "url": "https://www.ebay.com/itm/1"},
+        {"item_id": "2", "title": "2025 Topps Chrome F1 Oliver Bearman Orange Refractor Auto /25", "last_sold": "2026-10-15T12:00:00Z", "price": 300.0, "url": "https://www.ebay.com/itm/2"},
+        {"item_id": "3", "title": "2025 Topps Chrome F1 Oliver Bearman Orange RayWave /99", "last_sold": "2026-10-14T12:00:00Z", "price": 40.0, "url": "https://www.ebay.com/itm/3"},
+    ]}
+
+    def stub():
+        c = real()
+        c.get = lambda path, params=None: (calls.append(httpx.Request("GET", "https://x" + path, params=params)), httpx.Response(200, json=rows))[1]
+        return c
+
+    monkeypatch.setattr(compsapi, "_client", stub)
+    r = client.get("/api/v1/market/sold-search", params={"q": "2025 Topps Chrome F1 Oliver Bearman Auto Orange RayWave Refractor RC #/25"}).json()
+    assert calls[-1].url.params["q"] == "2025 topps chrome oliver bearman orange"
+    assert r["must_include"] == ["raywave", "/25"]
+    assert [i["item_id"] for i in r["items"]] == ["1"]  # not the plain Orange Refractor, not the /99

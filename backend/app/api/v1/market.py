@@ -25,29 +25,33 @@ def card_target(db: Session, card_id: int, grade: str | None, parallel_id: int |
     if not row:
         raise HTTPException(status_code=404, detail="Card not found")
     card, card_set, player = row
-    rows = db.execute(select(CardParallel.id, CardParallel.parallel_name).where(CardParallel.card_id == card_id)).all()
-    by_id = {pid: name for pid, name in rows}
-    named = [n for n in by_id.values() if n.lower() != "base"]
+    rows = db.execute(
+        select(CardParallel.id, CardParallel.parallel_name, CardParallel.print_run).where(CardParallel.card_id == card_id)
+    ).all()
+    by_id = {pid: name for pid, name, _ in rows}
+    runs = {pid: run for pid, _, run in rows}
+    named = [(pid, n) for pid, n in by_id.items() if n.lower() != "base"]
     if parallel_id in by_id:  # the version the owner actually holds
         parallel = None if by_id[parallel_id].lower() == "base" else by_id[parallel_id]
+        print_run = runs.get(parallel_id)
     else:
-        parallel = named[0] if len(named) == 1 else None
+        parallel = named[0][1] if len(named) == 1 else None
+        print_run = runs.get(named[0][0]) if len(named) == 1 else None
     target = {
         "player": player,
         "year": card.year,
         "product": card_set,
         "card_number": card.card_number,
         "parallel": parallel,
+        "print_run": print_run,
         "grade": grade,
     }
     # eBay's keyword search is AND-ish and punishes over-specific queries; keep it to the
     # identity words and let match_listing() decide what is an exact match.
-    parts = [str(card.year), card_set, player, card.card_number]
-    if parallel:
-        parts.append(parallel)
+    query = ebay.search_query(card.year, card_set, player, card.card_number, parallel)
     if grade and grade.lower() != "raw":
-        parts.append(grade)
-    return " ".join(parts), target
+        query += f" {grade}"
+    return query, target
 
 
 def _parallel_of(db: Session, card_id: int, parallel_id: int) -> bool:
