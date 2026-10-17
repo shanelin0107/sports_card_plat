@@ -23,6 +23,16 @@ _NOT_NAMES = set(
     "parallel card cards nba basketball baseball football f1 sp ssp short print variation var gem mint psa bgs sgc cgc raw "
     "new hot lot the and of a w with auto autograph serial numbered".split()
 )
+# Other words sellers put right next to a surname that are never a first name. Only used when
+# the first name is missing, so a longer list just means fewer good sales left out.
+_NOT_NAMES |= set(
+    "base silver gold holo refractor refractors prizm prism logo mint nm nrmt mt graded signed patch jersey relic rpa "
+    "rated ex vg pop invest investment sharp clean centered rare fire hof mvp all star allstar stars die cut edition "
+    "exclusive mega hobby retail blaster jumbo hanger fanatics box pack exclusive black white red blue green orange "
+    "purple pink yellow teal aqua bronze neon wave raywave mojo pulsar geometric superfractor xfractor 1st first "
+    "bowman topps panini upper deck donruss chrome finest update series sapphire flagship image photo look read "
+    "vintage modern lot lots set sets team usa draft pick picks".split()
+)
 
 
 def _words(s: str) -> list[str]:
@@ -41,15 +51,22 @@ def _name_in(t: str, compact: str, player: str, context: set[str] = frozenset())
     Robinson from another sport is not David Robinson. Sellers often drop famous first names
     ('Topps Chrome Wembanyama') or last names ('Giannis'), so either alone counts as long as
     no other first name is written next to it."""
-    parts = [w for w in _words(player) if w not in _SUFFIX]
+    # Surname = the last word of the name (a hyphenated one stays whole: Gilgeous-Alexander);
+    # middle names are optional ('Kimi Antonelli' / 'Antonelli' for Andrea Kimi Antonelli).
+    tokens = [tok for tok in ascii_fold(player).lower().split() if _words(tok) and _words(tok)[0] not in _SUFFIX]
+    parts = [w for tok in tokens for w in _words(tok)]
     if not parts:
         return False
     words = t.split()
-    first, last = parts[0], parts[1:] or parts
-    nonname = _NOT_NAMES | TEAM_WORDS | context
+    first = parts[0]
+    last = _words(tokens[-1]) if len(tokens) > 1 else parts
+    nonname = _NOT_NAMES | TEAM_WORDS | context | set(parts)
+
+    surname = "".join(last)
 
     def is_nonname(w: str) -> bool:
-        return w in nonname or any(ch.isdigit() for ch in w) or len(w) <= 1
+        # also a nickname cut from the surname: 'Wemby Wembanyama'
+        return w in nonname or any(ch.isdigit() for ch in w) or len(w) <= 1 or (len(w) >= 4 and w[:4] == surname[:4])
 
     initials = "".join(p[0] for p in _words(" ".join(parts).replace("-", " ")))
 

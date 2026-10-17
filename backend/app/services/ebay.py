@@ -21,6 +21,7 @@ import httpx
 
 from app.core.config import settings
 from app.services.ingestion.parsing import parse_title
+from app.services.names import _compact, _name_in, ascii_fold
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +160,13 @@ _TEAMS = re.compile(
 )
 # Listings that are never a single-card sale.
 _JUNK = re.compile(r"\b(lot|lots|reprint|custom|digital|break|case|box|pack|you pick|u pick|choose)\b")
+# ...except these phrases, which describe a single card ("SSP Case Hit", "pack fresh").
+_NOT_JUNK = re.compile(r"\b(case|box)\s+hits?\b|\bpack\s+fresh\b")
+
+
+def is_junk(t: str) -> bool:
+    """Lot, break, reprint or sealed product (not one card). t: normalised title."""
+    return bool(_JUNK.search(_NOT_JUNK.sub(" ", t)))
 
 
 _SELF_WORDS = re.compile(r"\b(auto|autos|autograph|autographs|autographed|signed|signature|patch|relic|jersey|rpa)\b")
@@ -180,6 +188,36 @@ _COLOURS = {
     "silver", "gold", "red", "blue", "green", "orange", "purple", "pink", "black", "white", "bronze", "teal",
     "yellow", "aqua", "neon", "sapphire", "emerald", "ruby",
 }
+
+
+def _season_in(year: str, t: str) -> bool:
+    """A 2025 card written as its season: "25-26", "25/26"."""
+    if not year.isdigit():
+        return False
+    yy = int(year) % 100
+    return bool(re.search(rf"(?<![\d#]){yy:02d}(?:\s*[-/]\s*|\s+){(yy + 1) % 100:02d}(?!\d)", t))
+
+
+def _other_code(num: str, t: str) -> bool:
+    """The title names the same kind of code with another number: FAN-20 is not FAN-18."""
+    m = re.fullmatch(r"([a-z]+)[\s\-]?(\d+)", num)
+    if not m:
+        return False
+    found = {int(x) for x in re.findall(rf"(?<![a-z0-9]){m.group(1)}[\s\-]?(\d+)(?![a-z0-9])", t)}
+    return bool(found) and int(m.group(2)) not in found
+
+
+_NUMBERED_PARALLEL_WORDS = _COLOURS | {"superfractor", "raywave", "pulsar", "geometric", "lazer", "mojo", "shimmer", "wave"}
+
+
+def _other_numbered_parallel(t: str, serials: set[int], own_words: set[str]) -> bool:
+    """For a card with no print run: is the title a numbered or 1/1 parallel of it (an extra
+    colour plus a serial, or a SuperFractor)? Words of the card's own parallel, set and player
+    don't count ("Prizm Black ... Orange Wave /60" is still the Orange Wave)."""
+    extra = {w for w in t.split() if w in _NUMBERED_PARALLEL_WORDS and w not in own_words}
+    if "superfractor" in extra:
+        return True
+    return bool(serials) and bool(extra)
 
 
 def search_query(year, card_set: str, player: str, card_number: str | None, parallel: str | None) -> str:
@@ -206,28 +244,30 @@ def match_listing(title: str, target: dict | None, strict_base: bool = False) ->
     """
     if not target:
         return False, []
-    t = f" {_norm(title)} "
+    t = f" {_norm(ascii_fold(title))} "  # "Jokić" is written "Jokic"
     misses: list[str] = []
-    if strict_base and _JUNK.search(t):
+    if strict_base and is_junk(t):
         misses.append("not a single card")
-    player = (target.get("player") or "").lower().split()
-    if player and player[-1] not in t:
-        misses.append("player")
+    player_name = target.get("player") or ""
+    product_words = set(_norm(target.get("product") or "").split())
+    parallel = _norm(target.get("parallel") or "").strip()
+    num_words = set(_norm(target.get("card_number") or "").replace("#", " ").split())
+    if player_name.strip() and not _name_in(t, _compact(title), player_name, product_words | set(parallel.split()) | num_words):
+        misses.append("player")  # also a namesake: "Bryce Harper" is not Dylan Harper
     year = str(target.get("year") or "")
-    if year and year not in t:
+    if year and year not in t and not _season_in(year, t):
         misses.append("year")
     num = (target.get("card_number") or "").lower().lstrip("#")
-    parallel = _norm(target.get("parallel") or "").strip()
     print_run = target.get("print_run")
     if num and not _number_in(num, t):
         # A title that names a different number is a different card. A title with no number
         # at all is common (sellers skip insert codes like CAC-BEA): accept it when the card
         # is otherwise specific (a named parallel or a print run) or the number is a code.
         specific = (parallel and parallel != "base") or print_run or not num.isdigit()
-        if _ANY_NUMBER.search(t) or not specific:
+        if _ANY_NUMBER.search(t) or not specific or _other_code(num, t):
             misses.append("card #")
+    serials = serials_in(t)
     if print_run:
-        serials = serials_in(t)
         if serials and int(print_run) not in serials:
             misses.append("print run")  # /50 is not /25
     if parallel and parallel != "base":
@@ -235,6 +275,8 @@ def match_listing(title: str, target: dict | None, strict_base: bool = False) ->
         need = [w for w in words if w not in _GENERIC_PARALLEL] or words
         if not all(f" {w} " in t for w in need):
             misses.append("parallel")
+        elif not print_run and _other_numbered_parallel(t, serials, set(words) | product_words | set(_norm(player_name).split())):
+            misses.append("parallel")  # a Fanatical holding: "Fanatical Gold /50" is a different card
     elif strict_base and (not parallel or parallel == "base"):
         # Ignore words that belong to the player, the set ("Prizm Black") or a team ("Red Sox").
         rest = _TEAMS.sub(" ", t)

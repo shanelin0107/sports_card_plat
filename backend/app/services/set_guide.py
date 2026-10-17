@@ -231,6 +231,7 @@ def match_reason(
     other_parallels: list[str],
     sport: str | None = None,
     team: str | None = None,
+    number: str | None = None,
 ) -> str | None:
     """None when this sold listing is the checklist card in the asked-for parallel;
     otherwise a short reason it was left out (shown to the owner)."""
@@ -240,7 +241,7 @@ def match_reason(
         return "lot / break / reprint"
     if _other_sport(t, sport):
         return "another sport"
-    context = set(_words(insert)) | {w for p in other_parallels for w in _words(p)} | set(_words(team or ""))
+    context = set(_words(insert)) | {w for p in other_parallels for w in _words(p)} | set(_words(team or "")) | set(_words(number or ""))
     if not _name_in(t, compact, player, context):
         return "different player"
     if _compact(insert_keyword(insert)) not in compact:
@@ -301,7 +302,7 @@ def price_check(db: Session, card_id: int, parallel_id: int, force: bool = False
         if cached:  # out of searches or CompsAPI down: the last saved result beats an error
             return {**cached["result"], "cached": True, "stale": str(exc), "fetched_at": cached["fetched_at"].isoformat()}
         raise
-    kw = dict(insert=row["insert"], player=row["player"], parallel=row["parallel"], print_run=row["print_run"], other_parallels=others, sport=row["sport"], team=row["team"])
+    kw = dict(insert=row["insert"], player=row["player"], parallel=row["parallel"], print_run=row["print_run"], other_parallels=others, sport=row["sport"], team=row["team"], number=row["number"])
     items, left_out = [], []
     for r in data["items"]:
         why = match_reason(r["title"], **kw) if r["date"] else "no sale date"
@@ -356,7 +357,7 @@ def load_photos(db: Session, insert_id: int, force: bool = False) -> dict:
     if not ins:
         raise LookupError("insert not found")
     cards = list(
-        db.execute(text("SELECT id, player, team, image_url, image_locked FROM set_insert_card WHERE insert_id = :i ORDER BY sort"), {"i": insert_id}).mappings()
+        db.execute(text("SELECT id, number, player, team, image_url, image_locked FROM set_insert_card WHERE insert_id = :i ORDER BY sort"), {"i": insert_id}).mappings()
     )
     # force (Re-pick): every card that the owner didn't pick by hand; otherwise only cards with no photo.
     todo = [c for c in cards if not c["image_locked"] and (force or not c["image_url"])]
@@ -382,14 +383,14 @@ def load_photos(db: Session, insert_id: int, force: bool = False) -> dict:
     others = [r[0] for r in db.execute(text("SELECT name FROM set_insert_parallel WHERE insert_id = :i"), {"i": insert_id})]
     with_photo = [it for it in items if it.get("image")]
 
-    def candidates(player: str, team: str | None) -> list[dict]:
-        kw = dict(insert=ins["name"], player=player, print_run=None, other_parallels=others, sport=ins["sport"], team=team)
+    def candidates(player: str, team: str | None, number: str) -> list[dict]:
+        kw = dict(insert=ins["name"], player=player, print_run=None, other_parallels=others, sport=ins["sport"], team=team, number=number)
         base = [it for it in with_photo if title_matches(it["title"], parallel="Base", **kw)]
         # A numbered parallel shows the same design in another colour: only when there's no base photo.
         par = [it for it in with_photo if it not in base and any(title_matches(it["title"], parallel=p, **kw) for p in others if p.lower() != "base")]
         return base + par
 
-    work = [(c, candidates(c["player"], c["team"])[:3]) for c in todo]
+    work = [(c, candidates(c["player"], c["team"], c["number"])[:3]) for c in todo]
     # All photos for the whole insert are fetched and scored together, in parallel.
     analyses = card_photo.analyze_urls([it["image"] for _, cs in work for it in cs])
     picks = [card_photo.best_photo(cs, analyses=analyses) if cs else None for _, cs in work]

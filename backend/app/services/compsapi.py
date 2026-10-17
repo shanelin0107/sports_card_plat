@@ -247,7 +247,7 @@ def search_sold(query: str, days: int | None = None) -> dict:
     """Sold eBay listings for whatever the owner typed (search page). One CompsAPI request,
     cached for 6 hours; grades are read from titles so the page can filter without
     spending more requests. Lots, breaks, reprints and sealed product are left out."""
-    from app.services.ebay import _JUNK, _norm
+    from app.services.ebay import _norm, is_junk
 
     q = " ".join(query.split())[:300]
     key = f"{q.lower()}|{days or settings.compsapi_days}"
@@ -260,7 +260,7 @@ def search_sold(query: str, days: int | None = None) -> dict:
 
     def relevant(r: dict) -> bool:
         t = f" {_norm(r['title'])} "
-        if _JUNK.search(t) or not all(f" {w} " in t for w in must):
+        if is_junk(t) or not all(f" {w} " in t for w in must):
             return False
         if run:
             from app.services.ebay import serials_in
