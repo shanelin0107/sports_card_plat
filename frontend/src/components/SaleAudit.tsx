@@ -56,8 +56,9 @@ export function SaleAudit() {
         <p className="text-[13px]">
           {items.length > 0 ? (
             <>
-              <b className="text-warn">{items.length} automatically saved sale{items.length === 1 ? '' : 's'}</b> look like a different card (e.g. a
-              numbered parallel or another player). They may be pulling your estimates off.
+              <b className="text-warn">{items.length} automatically saved sale{items.length === 1 ? '' : 's'}</b>{' '}
+              {items.length === 1 ? 'looks' : 'look'} like a different card (e.g. a numbered parallel or another player) and may be pulling your
+              estimates off.
             </>
           ) : (
             <span className="text-up">Removed {removed} sale{removed === 1 ? '' : 's'}.</span>
