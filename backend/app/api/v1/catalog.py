@@ -48,6 +48,14 @@ def clean_player(name: str) -> str:
     return " ".join(words).strip() or name.strip()
 
 
+def normalize_sport(name: str) -> str:
+    """One name per sport: "Formula 1", "formula one racing", "f1" -> "F1"; else Title Case."""
+    n = name.strip()
+    if re.search(r"\b(f1|formula\s*(1|one))\b", n, re.I):
+        return "F1"
+    return n.title()
+
+
 def _slug(*parts) -> str:
     return re.sub(r"[^a-z0-9]+", "-", " ".join(str(p) for p in parts).lower()).strip("-")
 
@@ -85,7 +93,7 @@ def _legacy_card(db: Session, old_slug: str, parallel_name: str) -> Card | None:
 
 def upsert_card(db: Session, body: CardCreate):
     """Find or create the catalog card (and parallel) described by `body`. Caller commits."""
-    sport = _get_or_create(db, Sport, {"name": body.sport.strip().title()})
+    sport = _get_or_create(db, Sport, {"name": normalize_sport(body.sport)})
     brand = _get_or_create(db, Brand, {"name": body.brand.strip()})
     set_name = body.set_name.strip()
     if not set_name.lower().startswith(brand.name.lower()):

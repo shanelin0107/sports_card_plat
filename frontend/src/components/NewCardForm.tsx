@@ -4,6 +4,7 @@ import { useState } from 'react';
 
 import { api } from '@/lib/client-api';
 import type { CardGuess } from '@/lib/guess-card';
+import { SPORTS, normalizeSport } from '@/lib/sports';
 
 type Created = { card_id: number; card_parallel_id: number; title: string; created: boolean };
 
@@ -74,12 +75,10 @@ export function NewCardForm({
           <label htmlFor="nc-sport" className="eyebrow">
             Sport
           </label>
-          <select id="nc-sport" name="sport" className="field" defaultValue={defaults.sport ?? 'Baseball'}>
-            <option>Baseball</option>
-            <option>Basketball</option>
-            <option>Football</option>
-            <option>Hockey</option>
-            <option>Soccer</option>
+          <select id="nc-sport" name="sport" className="field" defaultValue={normalizeSport(defaults.sport) ?? 'Baseball'}>
+            {SPORTS.map((s) => (
+              <option key={s}>{s}</option>
+            ))}
           </select>
         </div>
         <div className="flex items-end gap-5 pb-2 text-[13px]">

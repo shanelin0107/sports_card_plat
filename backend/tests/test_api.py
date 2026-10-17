@@ -327,3 +327,16 @@ def test_grade_tabs_split_by_company_and_always_offer_common_grades(client):
     assert ms("psa10")["count"] == 2 and ms("psa10")["median"] == 275.0
     assert ms("bgs10")["count"] == 1 and ms("bgs10")["median"] == 900.0
     assert client.get(f"/api/v1/valuations/cards/{card}", params={"grade": "bgs10"}).json()["estimated_price"] == 900.0
+
+
+def test_f1_is_one_sport_whatever_it_is_called(client):
+    from app.api.v1.catalog import normalize_sport
+
+    assert normalize_sport("Formula 1 Racing") == "F1" and normalize_sport("formula one") == "F1" and normalize_sport("f1") == "F1"
+    assert normalize_sport("basketball") == "Basketball"
+    base = {"year": 2024, "brand": "Topps", "set_name": "Chrome Formula 1", "player": "Max Verstappen", "card_number": "1"}
+    a = client.post("/api/v1/catalog/cards", json={**base, "sport": "F1"}).json()["card_id"]
+    b = client.post("/api/v1/catalog/cards", json={**base, "sport": "Formula 1"}).json()["card_id"]
+    assert a == b  # same card, same sport
+    item = client.post("/api/v1/collection/items", json={"card_id": a, "purchase_price": 50, "purchase_date": "2026-10-01"}).json()
+    assert item["sport"] == "F1"

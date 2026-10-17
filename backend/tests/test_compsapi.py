@@ -207,3 +207,14 @@ def test_bgs_holding_syncs_as_bgs(client, fake_api):
     client.post(f"/api/v1/market/sync/{card}", params={"grade": "bgs9.5"})
     sent = calls[-1].url.params
     assert sent["graded"] == "true" and sent["grader"] == "BGS" and sent["grade"] == "9.5"
+
+
+def test_f1_titles_match_either_spelling():
+    from app.services.ebay import match_listing
+
+    t = {"player": "Max Verstappen", "year": 2024, "product": "Topps Chrome F1", "card_number": "1", "parallel": None, "grade": "Raw"}
+    for title in ("2024 Topps Chrome F1 Max Verstappen #1", "2024 Topps Chrome Formula 1 Max Verstappen #1 Red Bull",
+                  "Max Verstappen 2024 Topps Chrome Formula One #1"):
+        assert match_listing(title, t, strict_base=True) == (True, []), title
+    t2 = {**t, "product": "Topps Chrome Formula 1"}
+    assert match_listing("2024 Topps Chrome F1 Max Verstappen #1", t2, strict_base=True) == (True, [])

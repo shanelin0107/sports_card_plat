@@ -123,7 +123,8 @@ def _get(path: str, params: dict, scope: str = SCOPE_BROWSE) -> dict | None:
 
 
 def _norm(s: str) -> str:
-    return re.sub(r"[^a-z0-9/#]+", " ", s.lower())
+    t = re.sub(r"[^a-z0-9/#]+", " ", s.lower())
+    return re.sub(r"\bformula (1|one)\b", "f1", t)  # "Formula 1" / "Formula One" / "F1" are one word
 
 
 # Words that mean a listing is a parallel/variation, not the base card.
@@ -133,7 +134,10 @@ _PARALLEL_WORDS = re.compile(
     r"pulsar|choice|fast break|no huddle|sp|ssp|variation|var|auto|autograph|patch|numbered)\b"
     r"|/\s*\d{1,4}\b"
 )
-_TEAMS = re.compile(r"\b(red sox|white sox|blue jays|red wings|blue jackets|golden state|vegas golden knights|orange county)\b")
+_TEAMS = re.compile(
+    r"\b(red sox|white sox|blue jays|red wings|blue jackets|golden state|vegas golden knights|orange county"
+    r"|red bull|oracle red bull|racing bulls|visa cash app rb|black arrows)\b"  # F1 teams with colour words
+)
 # Listings that are never a single-card sale.
 _JUNK = re.compile(r"\b(lot|lots|reprint|custom|digital|break|case|box|pack|you pick|u pick|choose)\b")
 
@@ -188,7 +192,7 @@ def match_listing(title: str, target: dict | None, strict_base: bool = False) ->
             rest = _SELF_WORDS.sub(" ", rest)
         if _PARALLEL_WORDS.search(rest):
             misses.append("parallel")
-    product = (target.get("product") or "").lower()
+    product = _norm(target.get("product") or "").strip()
     for w in [w for w in product.split() if w not in {"panini", "topps", "upper", "deck"}]:
         if w not in t:
             misses.append("set")
@@ -345,6 +349,12 @@ def _aspect_map(item: dict) -> dict[str, str]:
     return out
 
 
+def _sport_name(s: str) -> str:
+    from app.api.v1.catalog import normalize_sport
+
+    return normalize_sport(s)
+
+
 def card_fields_from_item(item: dict) -> dict:
     """Map eBay item specifics (seller-entered) to our catalog fields, falling back to the title."""
     from app.services.ingestion.parsing import parse_title
@@ -407,7 +417,7 @@ def card_fields_from_item(item: dict) -> dict:
     autographed = (first("autographed") or "").lower() == "yes" or "auto" in features
     sport = first("sport")
     return {
-        "sport": sport.title() if sport else None,
+        "sport": _sport_name(sport) if sport else None,
         "year": year,
         "brand": manufacturer,
         "set_name": set_name,

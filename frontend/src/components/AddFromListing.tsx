@@ -7,6 +7,7 @@ import { api } from '@/lib/client-api';
 import { resizeForUpload } from '@/lib/images';
 import { money } from '@/lib/format';
 import { gradeParam } from '@/lib/grade';
+import { SPORTS, normalizeSport } from '@/lib/sports';
 import type { Holding } from '@/lib/types';
 
 import type { SearchListing } from './EbaySearch';
@@ -30,7 +31,6 @@ type Item = { item_id: string; title: string; price: number | null; url: string;
 
 const GRADES = ['raw', '10', '9.5', '9', '8.5', '8', '7', '6', '5', '4', '3', '2', '1'];
 const GRADERS = ['PSA', 'BGS', 'SGC', 'CGC'];
-const SPORTS = ['Baseball', 'Basketball', 'Football', 'Hockey', 'Soccer', 'Other'];
 
 const today = () => {
   const d = new Date();
@@ -195,7 +195,7 @@ export function AddFromListing({ listing, onClose }: { listing: SearchListing; o
                     <label htmlFor="afl-sport" className="eyebrow">
                       Sport
                     </label>
-                    <select id="afl-sport" name="sport" className="field" defaultValue={c.sport && SPORTS.includes(c.sport) ? c.sport : 'Basketball'}>
+                    <select id="afl-sport" name="sport" className="field" defaultValue={normalizeSport(c.sport) ?? normalizeSport(c.set_name) ?? 'Basketball'}>
                       {SPORTS.map((s) => (
                         <option key={s}>{s}</option>
                       ))}

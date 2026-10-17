@@ -64,6 +64,13 @@ export function guessCard(query: string): CardGuess {
     q = q.replace(year[0], ' ');
   }
   if (season) g.sport = 'Basketball'; // "2024-25" style seasons are NBA/NHL; editable
+  // "F1" / "Formula 1" / "Formula One" names the sport and belongs to the set ("Topps Chrome F1"),
+  // never to the player or the card number.
+  const f1 = q.match(/\b(f1|formula\s*(?:1|one))\b/i);
+  if (f1) {
+    g.sport = 'F1';
+    q = q.replace(f1[0], ' ');
+  }
 
   // Serial numbering ("/60", "12/60", "#/60") is a print run, not part of the name or card number.
   const serial = q.match(/(?:#?\s*\d{0,4})\s*\/\s*(\d{1,4})\b/);
@@ -94,6 +101,7 @@ export function guessCard(query: string): CardGuess {
     g.set_name = set[2];
     q = q.replace(new RegExp(`\\b${set[0]}\\b`, 'i'), ' ');
   }
+  if (f1) g.set_name = g.set_name ? `${g.set_name} F1` : 'F1';
   for (const b of BRANDS) {
     if (new RegExp(`\\b${b}\\b`, 'i').test(q)) {
       g.brand = g.brand ?? title(b);
