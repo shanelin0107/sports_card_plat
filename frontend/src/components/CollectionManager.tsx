@@ -7,6 +7,7 @@ import { api } from '@/lib/client-api';
 import { longDate, money, pct, shortDate, signedMoney, tone } from '@/lib/format';
 import { DEFAULT_VIEW, applyFilters, groupItems, isFiltered, sortItems, totals, viewToQuery, type View } from '@/lib/collection-view';
 import { gradeParam, graderOf } from '@/lib/grade';
+import { SPORTS } from '@/lib/sports';
 import { guessCard } from '@/lib/guess-card';
 import { holdingImage, resizeForUpload } from '@/lib/images';
 import type { CardSearchResult, CompsApiStatus, Holding, SyncResult } from '@/lib/types';
@@ -72,6 +73,7 @@ type Draft = {
   image_url: string;
   current_photo: string | null; // what the thumbnail shows today
   player: string | null;
+  sport: string | null; // the catalog card's sport; editable from here
 };
 
 // Local calendar date (toISOString() is UTC, which is already "tomorrow" on US evenings).
@@ -81,13 +83,16 @@ const today = () => {
 };
 
 function blank(): Draft {
-  return { card_id: null, card_title: '', card_parallel_id: null, grade: 'raw', grade_company_id: null, grader: 'PSA', purchase_price: '', purchase_date: today(), quantity: '1', notes: '', image_url: '', current_photo: null, player: null };
+  return { card_id: null, card_title: '', card_parallel_id: null, grade: 'raw', grade_company_id: null, grader: 'PSA', purchase_price: '', purchase_date: today(), quantity: '1', notes: '', image_url: '', current_photo: null, player: null, sport: null };
 }
 
 function fromHolding(h: Holding): Draft {
   return {
     card_id: h.card_id,
-    card_title: h.title ?? `Card ${h.card_id}`,
+    // Same wording as the table row (the stored title can lag behind later card edits).
+    card_title:
+      [h.year, h.card_set, h.player, h.card_number ? `#${h.card_number}` : null].filter(Boolean).join(' ') +
+        (h.parallel && h.parallel !== 'Base' ? ` · ${h.parallel}` : '') || (h.title ?? `Card ${h.card_id}`),
     card_parallel_id: h.card_parallel_id,
     grade: h.grade_value ?? 'raw',
     grade_company_id: h.grade_company_id,
@@ -99,6 +104,7 @@ function fromHolding(h: Holding): Draft {
     image_url: h.image_url ?? '',
     current_photo: holdingImage(h),
     player: h.player,
+    sport: h.sport ?? null,
   };
 }
 
@@ -591,6 +597,11 @@ function HoldingForm({
       } else if (removePhoto && itemId) {
         h = await api<Holding>(`/collection/items/${h.id}/photo`, { method: 'DELETE' });
       }
+      if (itemId && d.sport && d.sport !== initial.sport) {
+        // Sport belongs to the catalog card, not the holding.
+        await api(`/catalog/cards/${h.card_id}`, { method: 'PATCH', body: JSON.stringify({ sport: d.sport }) });
+        h = await api<Holding>(`/collection/items/${h.id}`);
+      }
       if (validRows(sales).length) {
         const r = await saveSales(h.card_id, sales, h.card_parallel_id);
         if (r.errors.length) setErr(`Some sales weren’t saved: ${r.errors.join(' · ')}`);
@@ -634,6 +645,21 @@ function HoldingForm({
             <button type="button" className="btn-ghost px-3" onClick={() => set('card_id', null)}>
               Change
             </button>
+          )}
+          {itemId && (
+            <span className="flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-2 text-[12px] text-muted">
+                Sport
+                <select aria-label="Sport" className="field h-9 w-auto py-0" value={d.sport ?? 'Other'} onChange={(e) => set('sport', e.target.value)}>
+                  {[...new Set([...SPORTS, ...(d.sport ? [d.sport] : [])])].map((s) => (
+                    <option key={s}>{s}</option>
+                  ))}
+                </select>
+              </label>
+              <Link href={`/cards/${d.card_id}`} className="text-[12px] text-link hover:text-ink">
+                Edit card details →
+              </Link>
+            </span>
           )}
         </div>
       ) : creating ? (
