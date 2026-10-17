@@ -8,7 +8,18 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.core.config import settings
-from app.models.entities import AiPriceResearch, Card, CardParallel, CardSet, MarketFetchLog, Player, SaleComp
+from app.models.entities import (
+    AiPriceResearch,
+    Card,
+    CardParallel,
+    CardSet,
+    ListingCardMatch,
+    MarketFetchLog,
+    NormalizedSale,
+    Player,
+    RawMarketListing,
+    SaleComp,
+)
 from app.services import compsapi, ebay
 from app.services.comps import CompError, create_confirmed_comp, ebay_item_id, listing_key
 
@@ -291,6 +302,56 @@ def sold_search(q: str = Query(min_length=2, max_length=300)):
         raise HTTPException(status_code=429, detail=str(exc)) from exc
     except (compsapi.CompsApiError, httpx.HTTPError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+AUTO_METHODS = ("compsapi_auto", "ebay_insights_auto")  # saved by the title matcher, not by the owner
+
+
+@router.get("/sale-audit")
+def sale_audit(db: Session = Depends(get_db)):
+    """Automatically saved sales that the current matching rules would NOT save for their
+    card (e.g. a 'Fanatical Gold /50' sale on a Fanatical card). Read-only: nothing is
+    removed here — the owner removes the ones they agree with (DELETE /cards/{id}/comps/{id})."""
+    rows = db.execute(
+        select(
+            SaleComp.id,
+            SaleComp.card_id,
+            SaleComp.card_parallel_id,
+            SaleComp.total_price,
+            SaleComp.sold_at,
+            RawMarketListing.listing_title_raw,
+            RawMarketListing.listing_url_raw,
+            Card.title,
+        )
+        .join(NormalizedSale, NormalizedSale.id == SaleComp.normalized_sale_id)
+        .join(RawMarketListing, RawMarketListing.id == NormalizedSale.raw_market_listing_id)
+        .join(ListingCardMatch, ListingCardMatch.normalized_sale_id == SaleComp.normalized_sale_id)
+        .join(Card, Card.id == SaleComp.card_id)
+        .where(ListingCardMatch.match_method.in_(AUTO_METHODS))
+        .order_by(SaleComp.card_id, SaleComp.sold_at.desc())
+    ).all()
+    targets: dict[tuple[int, int | None], dict] = {}
+    out = []
+    for comp_id, card_id, par_id, total, sold_at, title, url, card_title in rows:
+        key = (card_id, par_id)
+        if key not in targets:
+            targets[key] = card_target(db, card_id, None, par_id)[1]
+        ok, misses = ebay.match_listing(title or "", targets[key], strict_base=True)
+        if ok:
+            continue
+        out.append(
+            {
+                "comp_id": comp_id,
+                "card_id": card_id,
+                "card": card_title,
+                "title": title,
+                "url": url,
+                "total": total,
+                "date": sold_at.date().isoformat() if sold_at else None,
+                "why": misses,
+            }
+        )
+    return {"checked": len(rows), "suspects": out[:300]}
 
 
 @router.get("/compsapi/status")

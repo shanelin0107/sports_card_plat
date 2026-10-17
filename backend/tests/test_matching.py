@@ -79,3 +79,31 @@ def test_case_hit_is_a_single_card_but_a_case_is_not():
     assert not is_junk(f" {_norm('Flagg Fanatical pack fresh')} ")
     assert is_junk(f" {_norm('2025-26 Topps Chrome Hobby Case 12 boxes')} ")
     assert is_junk(f" {_norm('2025-26 Topps Chrome Fanatical lot of 3')} ")
+
+
+def test_sale_audit_lists_auto_saved_sales_that_no_longer_match(client):
+    from app.db.session import SessionLocal
+    from app.services.comps import create_confirmed_comp
+
+    body = {
+        "card": {"sport": "Basketball", "year": 2025, "brand": "Topps", "set_name": "Topps Chrome", "player": "Cooper Flagg",
+                 "card_number": "FAN-21", "parallel": "Fanatical", "print_run": None, "rookie": True, "autograph": False},
+        "purchase_price": 250, "purchase_date": "2026-10-10", "grader": None, "grade_value": None,
+    }
+    h = client.post("/api/v1/collection/items/quick-add", json=body).json()
+    with SessionLocal() as db:
+        for i, (title, method) in enumerate([
+            ("2025-26 Topps Chrome Cooper Flagg Fanatical SSP Case Hit RC FAN-21", "compsapi_auto"),  # right card
+            ("2025-26 Topps Chrome Cooper Flagg Fanatical Gold Refractor /50 FAN-21", "compsapi_auto"),  # wrong: Gold /50
+            ("2025-26 Topps Chrome Cooper Flagg Fanatical Gold Refractor /50 FAN-21 #2", "manual_entry"),  # owner added it: leave alone
+        ]):
+            create_confirmed_comp(db, card_id=h["card_id"], listing_id=f"ebay-90{i}", title=title, url=f"https://www.ebay.com/itm/90{i}",
+                                  price=300 + i, date="2026-10-0%d" % (i + 1), grade="Raw", source="eBay", match_method=method,
+                                  payload={}, card_parallel_id=h["card_parallel_id"])
+        db.commit()
+    r = client.get("/api/v1/market/sale-audit").json()
+    mine = [s for s in r["suspects"] if s["card_id"] == h["card_id"]]
+    assert [s["title"] for s in mine] == ["2025-26 Topps Chrome Cooper Flagg Fanatical Gold Refractor /50 FAN-21"]
+    assert mine[0]["why"] == ["parallel"]
+    # nothing was removed by looking
+    assert client.get(f"/api/v1/cards/{h['card_id']}/market-summary").status_code == 200
